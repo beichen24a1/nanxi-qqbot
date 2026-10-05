@@ -102,6 +102,37 @@
      修法：`[System.IO.File]::WriteAllText($p, $text, (New-Object System.Text.UTF8Encoding($true)))`。
      ⇒ **给这类脚本加中文注释时，顺手把 BOM 一起加上**（判据：`ReadAllBytes()[0..2]` 是不是 `239,187,191`）。
 
+**✅ 2026-10-06：新功能【网易云点歌】—— 引用一条含网易云链接的消息 + @南汐，歌就发进群。**
+
+- 代码在 `astrbot_plugin_netease_pick\`（仓库根；部署副本在 `astrbot\data\plugins\`，**改完要同步 + 重启**）。
+  ⚠️ **它必须列进 `plugin_set` 才会响应** —— 新工具
+  `python tools\plugin_set.py --add <插件名> --apply`（**先停 AstrBot**，它内存里握着配置）。
+- **七个坑的完整说明写在插件自己的 `main.py` docstring 里，改这个插件前先读它。**
+  最容易栽的三个：
+  ① 下载**必须带浏览器 UA**（默认 UA 会被网易云回 83 字节的 `{"code":-460,…网络环境存在风险}`）；
+  ② **HTTP 200 完全不可信** —— 歌不存在时是 `200 + text/html` 的 104 KB 404 页面，
+     必须**三判据一起卡**：`Content-Type` 是 `audio/*` + 最终 URL 落到 `music.126.net` + 体积 > 200 KB；
+  ③ **`async def` 处理器里"多次 `yield` + 中间干活"会被静默截断** —— AstrBot 在 `stop_event()`
+     之后**不再迭代生成器**，于是"收到喵"发出去了、后面的下载**一行没跑且不报错**。
+     中间反馈要用 `await event.send(MessageChain([...]))`，**最后只 yield 一次**（petpet 那种形态）。
+- **路线是主人指定的官方外链**：`http://music.163.com/song/media/outer/url?id=<歌曲ID>.mp3`
+  —— 零依赖、免 key、免登录，不会因第三方服务挂掉而失效；代价是**拿不到 VIP / 版权受限的歌**。
+  社区那三个点歌插件（`Aoi-Karlin/…_pro_max`、`Dayanshifu/astrbot_plugin_music_pro`、
+  `ApproLight01/astrbot_netease_mus`）**2026-10-06 调研后都没用**：它们全是"搜歌名 → 第三方 API"路线，
+  分别要自建 API 服务 + Cookies / 注册 API key + 公开音源站 / 只解析不下载（详见插件 docstring）。
+- ⚠️ **语音（`Record`）依赖宿主机 ffmpeg**：AstrBot 发语音前会 `ensure_wav()` 转码，
+  它只从 PATH 找 `"ffmpeg"`，宿主机原本没装 ⇒ `Exception: ffmpeg not found`。
+  已 `winget install Gyan.FFmpeg`，并在 **`启动\restart-astrbot.ps1` 里加了 PATH 探测** ——
+  因为 winget 写的是**注册表** PATH，而 DSH 及其子进程继承的是**旧环境**，
+  必须显式 prepend `%LOCALAPPDATA%\Microsoft\WinGet\Links`。
+- **另一条发送路线**：AstrBot 的 `File`（群文件）组件在本架构下**必然失败**（它的 `file` 是 property，
+  在 **AstrBot 本机**查 `os.path.exists()`，而 SnowLuma 容器的挂载**全是命名卷**、没有绑定宿主目录）⇒
+  发群文件只能用 OneBot 的 `upload_group_file`（读容器内路径，要先 `docker cp`），
+  实测也通，配置项 `send_as=file`。
+- **实测验收（2026-10-06 00:43，测试群 `<TEST_GROUP_ID>`）**：小号发 `https://163cn.tv/bhu1nHlF`
+  → 引用它 + @南汐 → 日志 `短链解析…id=3410744228` / `下载完成 3673005 字节` / `已用语音发出`，
+  群里出现 `[record]`；ffprobe 确认下载到的是完整一首歌（`duration=229.5 秒`、`128 kbps`、`mp3`）。
+
 **DSH 已升级到 `0.2.0-rc.2`，给 Web 全面加了认证 ⇒ `/dsh` 当前【已失效】。**
 
 - **症状**：任何 DSH API 调用都返回 **HTTP 401**（`/api/workspace.list`、`/api/session.create`…

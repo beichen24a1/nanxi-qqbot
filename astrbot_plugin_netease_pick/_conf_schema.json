@@ -1,0 +1,17 @@
+{
+  "enable": {
+    "description": "启用「引用网易云链接 + @南汐」点歌",
+    "type": "bool",
+    "default": true
+  },
+  "send_as": {
+    "description": "用哪种消息发：record=语音（默认，能在聊天窗直接播放；适配器会读成 base64 内联，不受跨文件系统影响）、file=群文件（可下载留存；走 OneBot 的 upload_group_file，需要先把文件 docker cp 进容器）。两种在测试群都实测通过。",
+    "type": "string",
+    "default": "record"
+  },
+  "container": {
+    "description": "仅 send_as=file 时用到：QQ 协议端（SnowLuma）的 Docker 容器名。AstrBot 在宿主机、OneBot 在容器里，两边文件系统隔离，所以群文件模式要先 docker cp 进去。",
+    "type": "string",
+    "default": "snowluma"
+  }
+}

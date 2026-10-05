@@ -1,0 +1,6 @@
+name: astrbot_plugin_netease_pick
+display_name: 网易云点歌
+desc: 引用一条含网易云链接的消息 + @南汐，就把那首歌下载发到群里。走官方外链直链（零依赖、免 key、免登录），拿不到 VIP 歌。
+version: v1.0.0
+author: nanxi
+repo: https://github.com/beichen24a1/nanxi-qqbot

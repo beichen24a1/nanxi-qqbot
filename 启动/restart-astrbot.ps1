@@ -42,6 +42,41 @@ foreach ($port in @(6185, 3002)) {
 if ($killed.Count -eq 0) { Write-Host '  nothing was holding 6185/3002' }
 Start-Sleep -Seconds 3
 
+# --- Make sure ffmpeg is on PATH before launching AstrBot. ---
+# AstrBot converts audio to wav (ensure_wav -> convert_audio_format) before sending
+# a Record (voice) message, and it just calls "ffmpeg" from PATH. A fresh winget
+# install writes the user PATH registry value, but this process (and DSH itself)
+# inherited an older environment -- so probe the usual locations explicitly.
+# Without ffmpeg, voice messages fail with "Exception: ffmpeg not found".
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    $probe = @(
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'),
+        (Join-Path $env:USERPROFILE 'scoop\shims'),
+        'C:\ffmpeg\bin'
+    )
+    foreach ($d in $probe) {
+        if (Test-Path (Join-Path $d 'ffmpeg.exe')) {
+            $env:Path = $d + ';' + $env:Path
+            Write-Host ('  ffmpeg: ' + $d)
+            break
+        }
+    }
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+        $pkgRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        if (Test-Path $pkgRoot) {
+            $exe = Get-ChildItem $pkgRoot -Recurse -Filter 'ffmpeg.exe' -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($exe) {
+                $env:Path = $exe.Directory.FullName + ';' + $env:Path
+                Write-Host ('  ffmpeg: ' + $exe.Directory.FullName)
+            }
+        }
+    }
+}
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+    Write-Host '  WARN: ffmpeg not found -- Record (voice) messages will fail'
+}
+
 $env:PYTHONIOENCODING = 'utf-8'
 $out = Join-Path $logDir 'astrbot.log'
 $err = Join-Path $logDir 'astrbot.err.log'
