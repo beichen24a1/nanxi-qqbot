@@ -1,0 +1,23 @@
+{
+  "name": "dsh-nanxi-browser",
+  "version": "0.1.0",
+  "description": "南汐自己的浏览器（CDP 驱动本机 Chrome）+ 一个能看她实时画面的面板。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "cordis.patch.yml"],
+  "keywords": ["deepseek-harness", "dsh", "plugin", "browser", "cdp"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# dsh-nanxi-browser —— 由 dsh 的 bundle manifest 合并进 harness。
+# ⚠️ 形态照上游最小插件（dsh-share）：**包名 / id / name / 代码里的 `export const name`
+#    必须是同一个字符串**（dsh-share 四个地方全是 "dsh-share"）。
+#    我第一版把 id 写成 "nanxi-browser"，与 export name 对不上 —— 结果插件静默不加载：
+#    既没有 failed to import，日志里也一个字都没有，只是工具不在、路由 404。
+- insert:
+    - id: dsh-nanxi-browser
+      name: dsh-nanxi-browser

@@ -1,0 +1,74 @@
+# ===== 依赖 / 运行时 / 缓存 =====
+node_modules/
+_dshhome/
+_dshhome_web/
+_dl/
+_npmcache/
+_uvcache/
+_uvtest/
+_pipx/
+_tmp*/
+_refs/
+_test/
+_disabled_plugins/
+venv312/
+_scripts_archive/
+
+# ===== 数据库 / 日志 =====
+*.db
+*.db-wal
+*.db-shm
+*.log
+logs/
+astrbot_run.log
+snowluma_run.log
+_uvlog.txt
+_uvpip*.log
+astrbot/data/logs/
+
+# ===== 敏感（含密钥 / token，不入库） =====
+# OneBot 的账号配置（里面带 access token）—— 用通配，别把具体 QQ 号写进来
+onebot_*.json
+astrbot/data/cmd_config.json
+astrbot_data_conf/
+.github/
+游戏通知/config.json
+
+# ===== 上游项目（各自有 git 管理，不在此仓重复收录） =====
+astrbot/
+qq-bridge/
+snowluma/
+python/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.venv/
+*.pyo
+_aiocqhttp_src/
+_jieba_src/
+_deep/
+_uvtest/
+_pipx/
+astrbot_token.txt
+snowluma-win-x64.zip
+dsh_web_client/
+
+# ===== /dsh 专属 DSH 工作区 =====
+# 只跟踪隔离配置（AGENTS.md），其余临时产物不入库
+nx_dsh/*
+!nx_dsh/AGENTS.md
+
+# ===== 误创建到项目根的 AstrBot 数据目录（含密钥，绝不入库） =====
+data/
+
+# ===== 本地备份（含密钥，绝不入库）=====
+_backup/
+
+# ===== 本地凭据记录（含明文密码，绝不入库）=====
+本地凭据-勿入库.md
+
+# ===== tools/ 里由脚本生成的中间产物 =====
+# `tools\check_click_js.py` 每次运行都会把 browser.py 内联的那段 JS 抠到这里，
+# 再交给 `node --check` 做语法检查 —— 它是产物、不是源码。
+tools/_click_inline.js

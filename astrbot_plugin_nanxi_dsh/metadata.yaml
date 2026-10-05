@@ -1,0 +1,28 @@
+name: astrbot_plugin_nanxi_dsh
+display_name: 南汐 · 自主调用 DSH
+short_desc: 南汐自己判断何时把事情交给 DSH 执行代理，过程流式回帖、结果由南汐转述
+desc: >-
+  给南汐（聊天人格）注册一个 function-calling 工具：遇到写代码、读写文件、跑命令、
+  查资料、分析项目这类"需要真正动手"的活儿，由南汐自己在对话里决定交给 DSH 执行，
+  不再依赖用户手打 `dsh ` 前缀，也不靠正则猜意图。
+  执行期间按节流把 DSH 的输出流式发到同一会话，长任务不会让群里干等；
+  短任务则把结果整段交还给南汐，由它用自己的口气转述。
+  默认仅主人可触发（DSH 侧是 danger-full-access，不能让群友一句话把机器交出去）。
+  另带一个只读观察页（WebUI → 插件 → 南汐 · 观察）：把"她的决定 → 交给 DSH →
+  每次工具调用 → 收工"按 event_id 顺序记成事件账本并实时回放，看得见她怎么想、怎么动手。
+version: v0.2.0
+author: nanxi
+repo: https://github.com/local/nanxi-dsh-plugin
+astrbot_version: ">=4.16,<5"
+support_platforms:
+  - aiocqhttp
+tags:
+  - deepseek
+  - harness
+  - dsh
+  - bridge
+  - llm-tool
+pages:
+  - name: trace
+    title: 南汐 · 观察
+    entry_file: index.html

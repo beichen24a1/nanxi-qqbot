@@ -1,0 +1,5 @@
+# The dsh-email-notify bundle patch: one plugin row.
+# Applied when a profile lists this bundle via `dsh plugin add`.
+- insert:
+    - id: dsh-email-notify
+      name: dsh-email-notify

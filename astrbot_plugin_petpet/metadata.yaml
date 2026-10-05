@@ -1,0 +1,6 @@
+name: astrbot_plugin_petpet
+display_name: 摸头杀
+desc: 摸头杀 GIF：@南汐 说「摸摸 / 摸头 / 摸摸头」即生成摸头动图（可引用图片 / @某人 / 默认自己），只回图片
+version: v1.1.0
+author: nanxi
+repo: https://github.com/local/petpet-plugin

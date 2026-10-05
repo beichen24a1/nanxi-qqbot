@@ -1,0 +1,92 @@
+{
+  "enable": {
+    "description": "启用「南汐自主调用 DSH」工具",
+    "type": "bool",
+    "default": true
+  },
+  "owner_only": {
+    "description": "只有主人能触发（强烈建议保持开启：DSH 侧是完全文件权限）",
+    "type": "bool",
+    "default": true
+  },
+  "owner_qq": {
+    "description": "主人的 QQ 号（可写多个，用逗号/空格分隔，例如 10001,10002；owner_only 开启时生效）",
+    "type": "string",
+    "default": ""
+  },
+  "bridge_url": {
+    "description": "星驿桥接地址（必须与 astrbot_plugin_dsh_relay 使用同一套；南汐的独立实例是 3081）",
+    "type": "string",
+    "default": "http://127.0.0.1:3081/astrbot-relay"
+  },
+  "bridge_token": {
+    "description": "星驿桥接 token（与 astrbot_plugin_dsh_relay 的 bridge_token 保持一致）",
+    "type": "string",
+    "default": ""
+  },
+  "dsh_home": {
+    "description": "DSH 的 ~/.dsh 目录（用来读会话标题；留空 = 当前用户主目录下的 .dsh，跨机部署时才需要填）",
+    "type": "string",
+    "default": ""
+  },
+  "home_workspace": {
+    "description": "默认工位（南汐出差干完活会回到这里；也是杂事的地盘）",
+    "type": "string",
+    "default": "nx_dsh"
+  },
+  "workspace_allow": {
+    "description": "许南汐去的工作区（按标题或路径匹配；留空 = 全部允许）",
+    "type": "list",
+    "default": []
+  },
+  "workspace_deny": {
+    "description": "禁止南汐去的工作区（优先级高于 workspace_allow；她会连名字都看不到）",
+    "type": "list",
+    "default": []
+  },
+  "session_deny": {
+    "description": "禁止南汐碰的会话（可写会话 id、id 前缀，或标题里的关键词 —— 按会话禁不必记 uuid）",
+    "type": "list",
+    "default": []
+  },
+  "stream": {
+    "description": "逐片直发（旧的流式行为，默认关）。关着的时候正文攒到最后一次性交付，超长自动打成一张合并转发卡片，不会刷屏",
+    "type": "bool",
+    "default": false
+  },
+  "merge_threshold": {
+    "description": "正文超过这么多字就打成一张合并转发卡片（0 = 永不合并）",
+    "type": "int",
+    "default": 300
+  },
+  "flush_chars": {
+    "description": "流式分片：攒够多少字就发一片",
+    "type": "int",
+    "default": 200
+  },
+  "throttle_ms": {
+    "description": "流式分片：两片之间的最小间隔（毫秒）",
+    "type": "int",
+    "default": 2500
+  },
+  "chunk_size": {
+    "description": "流式分片：单片最大字数（0 = 不限制）",
+    "type": "int",
+    "default": 800
+  },
+  "tool_progress": {
+    "description": "把「DSH 正在用 xxx」播报到群里（默认关：同一个工具常被连调十几次，很容易刷屏）",
+    "type": "bool",
+    "default": false
+  },
+  "request_timeout": {
+    "description": "单轮 DSH 任务最长等待时间（秒）",
+    "type": "int",
+    "default": 600
+  },
+  "sse_read_timeout": {
+    "description": "SSE 多久没收到任何数据就判链路断了（秒）。⚠️ 别调太小：超时后服务端那次投递不会被取消，那个会话会卡在 attaching、后续操作全被 409 拒，只能重启她的 DSH 实例",
+    "type": "int",
+    "default": 180
+  }
+}

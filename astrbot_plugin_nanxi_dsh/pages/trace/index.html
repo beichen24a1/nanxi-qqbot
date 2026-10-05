@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh-CN" class="light" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>南汐 · 观察</title>
+<!--
+  ⚠️ 必须引 AstrBot 的 bridge-sdk，且**不能**直接 fetch。
+  原因：AstrBot 把插件页放进 `sandbox="allow-scripts allow-forms allow-downloads"`
+  的 iframe —— **故意不给 allow-same-origin**，所以 iframe 的 origin 是 `null`：
+    · `localStorage` 一碰就抛 SecurityError（会让整个脚本当场死掉）；
+    · `fetch("/api/...")` 变成跨源请求，既不带 cookie 也没 CORS 头 ⇒ 拿不到数据。
+  bridge 用 postMessage 把请求转给**已登录的父页面**代发，这才是唯一正路。
+  ⚠️ bridge 脚本本身也受 asset_token 保护（`/api/plugin/page/bridge-sdk.js` 在
+  `PluginPageAuth.is_protected_path` 里），静态 `<script src>` 不带 token 会 401 ——
+  所以下面用 JS **动态注入并带上当前页面的 asset_token**。
+  直接开这个页面 URL（不在 iframe 里）时 bridge 不存在，那时才降级用 fetch。
+-->
+<script>
+  // 诊断上报：往父页面发 {__nanxiDiag}。它**不是** bridge 的 channel，
+  // 宿主只会忽略，不会干扰；只在确实需要排查时打开（?diag=0 可关）。
+  var __diag = new URLSearchParams(location.search).get("diag") !== "0";
+  function __rep(step, extra) {
+    if (!__diag) { return; }
+    try { window.parent.postMessage({ __nanxiDiag: step, extra: extra || null }, "*"); } catch (e) {}
+  }
+  __rep("head-parsed", { search: location.search.slice(0, 40), origin: String(location.origin) });
+  // 注意：这里**刻意不引** /api/plugin/page/bridge-sdk.js —— 在本页的实际运行环境里
+  // （sandbox 无 allow-same-origin）它加载就失败。协议在下方手写，见 CHANNEL/bridgeCall。
+</script>
+<!--
+  南汐的「思维链」观察页 —— 结构抄 MaiBot 的麦麦观察，配色抄 SnowLuma。
+
+  两条纪律（那套系统用血换来的，别改）：
+    ① 按 event_id 排序，**不能**按时间戳 —— 同毫秒内多件事很常见，时间戳会错位；
+    ② 卡片身份 = turn。同一轮的所有事件（决定 / 交给 DSH / 每次工具 / 收工）
+       都刷**同一张卡**，而不是每来一条就往上堆一张。
+  配色取自 SnowLuma 的 client/assets/index-*.css（Tailwind v4 + oklch，主色 sky）。
+-->
+<style>
+  :root {
+    --background: oklch(99% .004 240);
+    --foreground: oklch(20% .03 250);
+    --card: oklch(100% 0 0);
+    --card-foreground: oklch(20% .03 250);
+    --muted: oklch(96% .012 240);
+    --muted-foreground: oklch(50% .02 250);
+    --border: oklch(92% .01 240);
+    --primary: #0ea5e9;
+    --primary-soft: oklch(96% .03 232);
+    --success: oklch(65% .17 150);
+    --warn: oklch(75% .15 75);
+    --radius: .75rem;
+    --radius-lg: 1rem;
+  }
+  html.dark {
+    --background: oklch(16% .02 250);
+    --foreground: oklch(96% .01 240);
+    --card: oklch(20% .025 250);
+    --card-foreground: oklch(96% .01 240);
+    --muted: oklch(24% .02 250);
+    --muted-foreground: oklch(68% .02 240);
+    --border: oklch(28% .02 250);
+    --primary-soft: oklch(30% .06 240);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px; background: color-mix(in oklab, var(--card) 82%, transparent);
+    backdrop-filter: blur(12px); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+  .dot.off { background: var(--muted-foreground); }
+  .spacer { flex: 1; }
+  button {
+    font: inherit; font-size: 13px; padding: 5px 12px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); color: var(--foreground);
+  }
+  button:hover { background: var(--muted); }
+  main { display: flex; gap: 16px; padding: 16px 20px 40px; align-items: flex-start; }
+  #timeline { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  aside { width: 300px; flex: none; display: flex; flex-direction: column; gap: 12px; position: sticky; top: 68px; }
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 14px 16px;
+  }
+  .panel h2 { font-size: 12px; margin: 0 0 10px; color: var(--muted-foreground); font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
+  .kv { display: flex; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+  .kv b { color: var(--muted-foreground); font-weight: 500; flex: none; min-width: 52px; }
+  .kv span { word-break: break-all; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 12px 14px;
+    box-shadow: 0 1px 2px #0000000d;
+  }
+  .card.running { border-color: color-mix(in oklab, var(--primary) 55%, var(--border)); }
+  .card-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .card-head .icon { font-size: 15px; }
+  .card-head .name { font-weight: 620; }
+  .card-head .time { margin-left: auto; color: var(--muted-foreground); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .badge {
+    font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    background: var(--muted); color: var(--muted-foreground);
+  }
+  .badge.at { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .badge.run { background: var(--primary-soft); color: var(--primary); }
+  .badge.ok { background: oklch(94% .06 150); color: oklch(45% .15 150); }
+  html.dark .badge.ok { background: oklch(32% .06 150); color: oklch(82% .13 150); }
+  .task {
+    margin: 8px 0 0; padding: 8px 10px; font-size: 13px; border-radius: var(--radius);
+    background: var(--muted); color: var(--card-foreground); white-space: pre-wrap; word-break: break-word;
+  }
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tool {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .tool b { color: var(--primary); font-weight: 600; }
+  .foot { margin-top: 10px; font-size: 12px; color: var(--muted-foreground); }
+  .empty { text-align: center; color: var(--muted-foreground); padding: 60px 0; font-size: 13px; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot off" id="live"></span>
+  <h1>南汐 · 观察</h1>
+  <span class="badge" id="cursor">游标 0</span>
+  <span class="spacer"></span>
+  <button id="theme">切换主题</button>
+  <button id="reload">刷新</button>
+</header>
+
+<main>
+  <div id="timeline"><div class="empty">还没有观察到任何动静 —— 让南汐去干点活吧。</div></div>
+  <aside>
+    <div class="panel" id="state"><h2>当前状态</h2><div class="kv"><span>读取中…</span></div></div>
+    <div class="panel" id="boards"><h2>工作台</h2><div class="kv"><span>读取中…</span></div></div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  // 插件 API 的真实地址（**直接 fetch 时**用）：/api/v1/plugins/extensions/<插件名>/<路径>
+  // ⚠️ 但走 bridge 时 MUST 只给**相对**路径（"state" / "trace/0"）—— 父页面自己会拼
+  //    `/api/v1/plugins/extensions/<插件名>/` 前缀（见 PluginPagePage 的 te()/B()）。
+  //    两边都写全路径的话，会拼成 `.../astrbot_plugin_nanxi_dsh/api/v1/plugins/...` ⇒ 404。
+  const API = "/api/v1/plugins/extensions/astrbot_plugin_nanxi_dsh";
+
+  // sandbox 里 localStorage 会抛 SecurityError —— 整个脚本会当场死掉，
+  // 表现就是页面永远停在「游标 0 / 读取中…」。所以先探一次，不通就退回内存。
+  const store = (() => {
+    try {
+      localStorage.setItem("__probe", "1");
+      localStorage.removeItem("__probe");
+      return localStorage;
+    } catch (e) {
+      const mem = {};
+      return {
+        getItem: (k) => (k in mem ? mem[k] : null),
+        setItem: (k, v) => { mem[k] = String(v); },
+        removeItem: (k) => { delete mem[k]; },
+      };
+    }
+  })();
+
+  // ---- 与宿主通信：手写 AstrBot 插件页协议 ------------------------------
+  //
+  // 为什么不用官方的 bridge-sdk.js：在本页的实际运行环境里（sandbox 没有
+  // allow-same-origin ⇒ origin 为 null），那个脚本**加载就失败**（onerror），
+  // 于是 window.AstrBotPluginPage 一直是 undefined。而它做的事其实就是下面这几行
+  // —— 把请求用 postMessage 递给父页面（AstrBot 仪表盘，已登录）代发。
+  // 协议取自 astrbot/dashboard/plugin_page_bridge.js：CHANNEL + kind + requestId。
+  const CHANNEL = "astrbot-plugin-page";
+  let __reqId = 0;
+  const __pending = new Map();
+  window.addEventListener("message", (e) => {
+    const m = e.data;
+    if (!m || m.channel !== CHANNEL || m.kind !== "response") { return; }
+    const p = __pending.get(m.requestId);
+    if (!p) { return; }
+    __pending.delete(m.requestId);
+    if (m.ok) { p.resolve(m.data); } else { p.reject(new Error(m.error || "bridge 请求失败")); }
+  });
+  function bridgeCall(action, payload) {
+    return new Promise((resolve, reject) => {
+      const requestId = "nanxi_" + (++__reqId);
+      __pending.set(requestId, { resolve, reject });
+      window.parent.postMessage(
+        Object.assign({ channel: CHANNEL, kind: "request", requestId, action }, payload || {}),
+        "*",
+      );
+      setTimeout(() => {
+        if (__pending.has(requestId)) {
+          __pending.delete(requestId);
+          reject(new Error("bridge 超时"));
+        }
+      }, 10000);
+    });
+  }
+
+  // 统一取数。``rel`` 是**相对路径**（"state" / "trace/0" / "boards"）：
+  //   · iframe 里 → 交给 bridge（父页面补前缀并代发，已登录、不受 sandbox 影响）；
+  //   · 直接开页面 → 自己补前缀 fetch（此时没有 sandbox，正常同源）。
+  const inIframe = window.parent !== window;
+  async function apiGet(rel) {
+    if (inIframe) {
+      __rep("api-bridge", rel);
+      try {
+        const data = await bridgeCall("api:get", { endpoint: rel });
+        __rep("api-bridge-ok", rel + " len=" + JSON.stringify(data || {}).length);
+        return data;
+      } catch (err) {
+        __rep("api-bridge-err", rel + " :: " + String(err).slice(0, 220));
+        throw err;
+      }
+    }
+    __rep("api-fetch", rel);
+    const r = await fetch(API + "/" + rel, { credentials: "same-origin" });
+    __rep("api-fetch-status", rel + " " + r.status);
+    if (!r.ok) { throw new Error("HTTP " + r.status); }
+    return await r.json();
+  }
+  const CURSOR_KEY = "nanxi-trace-last";
+
+  const timeline = document.getElementById("timeline");
+  const liveDot = document.getElementById("live");
+  const cursorEl = document.getElementById("cursor");
+  const emptyEl = timeline.querySelector(".empty");
+
+  /** turn -> { el, tools: Map<name, count>, ... } 卡片身份表 */
+  const turns = new Map();
+  let last = parseInt(store.getItem(CURSOR_KEY) || "0", 10) || 0;
+  let booted = false;
+
+  const ICON = {
+    decision: "🧭", "dsh/start": "▶️", "dsh/tool": "🔧",
+    "dsh/end": "✅", look: "👀", fork: "🍴",
+  };
+  const LABEL = {
+    decision: "她的决定", "dsh/start": "交给 DSH", "dsh/tool": "调用工具",
+    "dsh/end": "收工", look: "看一眼工作台", fork: "分了个副本",
+  };
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const hhmmss = (t) => new Date((t || 0) * 1000).toTimeString().slice(0, 8);
+
+  function newCard(ev) {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML =
+      '<div class="card-head"><span class="icon"></span>' +
+      '<span class="name"></span><span class="at badge at" hidden></span>' +
+      '<span class="st badge" hidden></span>' +
+      '<span class="time"></span></div>' +
+      '<div class="task" hidden></div><div class="tools" hidden></div>' +
+      '<div class="foot" hidden></div>';
+    if (emptyEl) { emptyEl.remove(); }
+    timeline.appendChild(el);
+    return el;
+  }
+
+  function render(ev) {
+    // ① 卡片身份：优先用 turn；没有 turn 的（看板等）每次独立一张。
+    const key = ev.turn || ("_" + ev.event_id);
+    let el = turns.get(key);
+    if (!el) { el = newCard(ev); turns.set(key, el); el._tools = new Map(); el._first = ev; }
+
+    const d = ev.data || {};
+    const head = el.querySelector(".card-head");
+    // 标题与图标只在**首个事件**时定一次 —— 同一轮后面的事件（收工）不该把
+    // "她的决定"覆盖成"收工"，那会让整条时间线看起来每张卡都叫收工。
+    if (!el._titled) {
+      head.querySelector(".icon").textContent = ICON[ev.event_type] || "•";
+      head.querySelector(".name").textContent = LABEL[ev.event_type] || ev.event_type;
+      el._titled = true;
+    }
+    head.querySelector(".time").textContent = hhmmss(ev.timestamp);
+
+    // 状态另用徽标表达，不抢标题
+    const st = head.querySelector(".st");
+    if (ev.event_type === "dsh/end") {
+      st.hidden = false; st.className = "st badge ok"; st.textContent = "完成";
+    } else if (ev.event_type === "dsh/start" || ev.event_type === "dsh/tool") {
+      st.hidden = false; st.className = "st badge run"; st.textContent = "进行中";
+    }
+
+    const atEl = head.querySelector(".at");
+    if (d.at) { atEl.hidden = false; atEl.textContent = "at=" + d.at; } else { atEl.hidden = true; }
+
+    // 任务描述：决定 / 交活时都带，取最长的那次
+    const taskEl = el.querySelector(".task");
+    const task = d.task || el._task;
+    if (task) {
+      el._task = task;
+      if (task.length >= (el._taskLen || 0)) {
+        el._taskLen = task.length;
+        taskEl.hidden = false;
+        taskEl.textContent = task;
+      }
+    }
+
+    // 工具：同名合并计数 —— 一次任务常把 glob 调十几次，不该堆十几行
+    if (ev.event_type === "dsh/tool") {
+      const n = String(d.name || "工具");
+      el._tools.set(n, (el._tools.get(n) || 0) + 1);
+      const box = el.querySelector(".tools");
+      box.hidden = false;
+      box.innerHTML = [...el._tools.entries()]
+        .map(([k, v]) => '<span class="tool">' + esc(k) +
+          (v > 1 ? " <b>×" + v + "</b>" : "") + "</span>").join("");
+    }
+
+    if (ev.event_type === "dsh/start") { el.classList.add("running"); }
+
+    if (ev.event_type === "dsh/end") {
+      el.classList.remove("running");
+      const foot = el.querySelector(".foot");
+      foot.hidden = false;
+      const parts = [];
+      if (d.chars) { parts.push("产出 " + d.chars + " 字"); }
+      if (Array.isArray(d.tools) && d.tools.length) { parts.push("共 " + d.tools.length + " 次工具调用"); }
+      if (Array.isArray(d.notes) && d.notes.length) { parts.push("备注：" + d.notes.join("；")); }
+      parts.push("起于 " + hhmmss(el._first.timestamp));
+      foot.textContent = parts.join(" · ");
+    }
+    if (ev.event_type === "look") { el.querySelector(".foot").hidden = true; }
+  }
+
+  async function poll(sinceOverride) {
+    // ⚠️ 首屏必须从 0 拉（此刻 DOM 是空的，只有增量是白屏）；localStorage 里
+    // 那个游标只服务于"页面已经渲染过历史之后"的增量拉取。
+    const since = typeof sinceOverride === "number" ? sinceOverride : last;
+    try {
+      const j = await apiGet("trace/" + since);
+      const evs = (j && j.events) || [];
+      // ② 按 event_id 升序消费（后端已排好；这里再兜一次，绝不按时间戳）
+      evs.sort((a, b) => a.event_id - b.event_id);
+      for (const ev of evs) {
+        render(ev);
+        if (ev.event_id > last) { last = ev.event_id; }
+      }
+      store.setItem(CURSOR_KEY, String(last));
+      cursorEl.textContent = "游标 " + last;
+      liveDot.className = "dot";
+      if (booted) { timeline.scrollTop = timeline.scrollHeight; }
+    } catch (e) {
+      liveDot.className = "dot off";
+      cursorEl.textContent = "连接失败";
+    }
+  }
+
+  async function refreshSide() {
+    try {
+      const s = await apiGet("state");
+      const el = document.getElementById("state");
+      const rows = [
+        ["在哪间", (s.session_id || "").slice(0, 22) || "—"],
+        ["目录", s.cwd || "—"],
+        ["标题", s.title || "—"],
+      ];
+      const mem = s.memory || {};
+      const projects = Object.keys(mem).filter((k) => k !== "__home__");
+      el.innerHTML = "<h2>当前状态</h2>" + rows.map(([k, v]) =>
+        '<div class="kv"><b>' + k + "</b><span>" + esc(v) + "</span></div>").join("") +
+        (projects.length ? '<div class="kv"><b>去过</b><span>' + esc(projects.map((p) => p.split("\\").pop()).join("、")) + "</span></div>" : "");
+
+      const b = await apiGet("boards");
+      const bel = document.getElementById("boards");
+      const items = (b && b.items) || [];
+      bel.innerHTML = "<h2>工作台</h2>" + (items.length ? items.map((it) =>
+        '<div class="kv"><b>' + esc(it.title || it.path) + "</b><span>" + it.sessions + " 间" +
+        (it.recent && it.recent[0] && it.recent[0].title ? "<br><span style='color:var(--muted-foreground)'>" + esc(it.recent[0].title.slice(0, 30)) + "</span>" : "") +
+        "</span></div>").join("") : '<div class="kv"><span>读不到</span></div>');
+    } catch (e) { /* 面板读不到就保持原样，不打扰观察 */ }
+  }
+
+  document.getElementById("theme").onclick = () => {
+    const dark = document.documentElement.classList.toggle("dark");
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    store.setItem("nanxi-trace-theme", dark ? "dark" : "light");
+  };
+  document.getElementById("reload").onclick = () => {
+    store.removeItem(CURSOR_KEY); last = 0; turns.clear();
+    timeline.innerHTML = '<div class="empty">重新拉取中…</div>';
+    poll(0);
+  };
+
+  if (store.getItem("nanxi-trace-theme") === "dark") {
+    document.documentElement.classList.add("dark");
+    document.documentElement.dataset.theme = "dark";
+  }
+  poll(0).then(() => { booted = true; });
+  refreshSide();
+  // ⚠️ 必须包一层：直接 setInterval(poll, …) 会把定时器句柄当 since 传进去
+  setInterval(() => poll(), 1500);
+  setInterval(refreshSide, 5000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>南汐点测台</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 0; padding: 24px;
+         background: #16181d; color: #e6e6e6; }
+  h1 { font-size: 18px; margin: 0 0 16px; color: #8ab4f8; }
+  .panel { width: 460px; background: #1e2128; border-radius: 10px; padding: 8px; }
+  .row { position: relative; display: flex; align-items: center;
+         height: 34px; padding: 0 8px; border-radius: 6px; margin-bottom: 4px;
+         background: #24272f; }
+  .row .name { flex: 1; }
+  /* 关键：这个「…」按钮的可访问名字里**也包含**工作区名，
+     正是真实 DSH 侧边栏里让南汐点歪的那种元素。 */
+  .more { position: absolute; right: 8px; width: 26px; height: 26px;
+          border: 0; border-radius: 6px; background: #3a3f4b; color: #cfd3da;
+          font-size: 15px; line-height: 1; cursor: pointer; }
+  .more:hover { background: #4a5060; }
+  #result { margin-top: 18px; font-size: 26px; font-weight: 700;
+            color: #34d399; letter-spacing: 1px; }
+  #log { margin-top: 10px; font-size: 12px; color: #9aa0aa; white-space: pre-line; }
+</style>
+</head>
+<body>
+<h1>南汐点测台（点名字 ≠ 点右边的「…」）</h1>
+
+<div class="panel">
+  <div class="row" id="row-nx">
+    <span class="name" id="name-nx">nx_dsh</span>
+    <button class="more" id="more-nx" aria-label="nx_dsh 的更多操作"
+            title="nx_dsh 的更多操作">…</button>
+  </div>
+  <div class="row" id="row-long">
+    <span class="name" id="name-long">baah 计划表_南汐</span>
+    <button class="more" id="more-long" aria-label="baah 计划表_南汐 的更多操作"
+            title="baah 计划表_南汐 的更多操作">…</button>
+  </div>
+</div>
+
+<div id="result">RESULT=NONE</div>
+<div id="log">（还没点过）</div>
+
+<script>
+  var logEl = document.getElementById('log');
+  var lines = [];
+  function log(s) { lines.push(s); logEl.textContent = lines.join('\n'); }
+  document.getElementById('result').textContent = 'RESULT=NONE';
+
+  function bind(rowId, nameId, moreId, label) {
+    var row = document.getElementById(rowId);
+    var name = document.getElementById(nameId);
+    var more = document.getElementById(moreId);
+    // 点「名字」= 切换成功
+    name.addEventListener('click', function (e) {
+      e.stopPropagation();
+      document.getElementById('result').textContent = 'RESULT=SWITCHED_' + label;
+      log('点中名字 ' + label + ' @ ' + Math.round(e.clientX) + ',' + Math.round(e.clientY));
+    });
+    // 点「…」= 弹出菜单（点歪了）
+    more.addEventListener('click', function (e) {
+      e.stopPropagation();
+      document.getElementById('result').textContent = 'RESULT=MENU_' + label;
+      log('点中「…」按钮 ' + label + ' @ ' + Math.round(e.clientX) + ',' + Math.round(e.clientY));
+    });
+    // 点整行其它地方 = 切换成功
+    row.addEventListener('click', function (e) {
+      document.getElementById('result').textContent = 'RESULT=SWITCHED_' + label;
+      log('点中行 ' + label + ' @ ' + Math.round(e.clientX) + ',' + Math.round(e.clientY));
+    });
+  }
+
+  bind('row-nx', 'name-nx', 'more-nx', 'nx_dsh');
+  bind('row-long', 'name-long', 'more-long', 'baah');
+</script>
+</body>
+</html>

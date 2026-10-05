@@ -1,0 +1,5 @@
+name: astrbot_plugin_dsh
+desc: /dsh 命令调用本机 DSH(DeepSeek Harness) 执行任务并返回结果，仅主人可用
+version: v1.0.0
+author: nanxi
+repo: https://github.com/local/dsh-plugin

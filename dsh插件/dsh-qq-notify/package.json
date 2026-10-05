@@ -1,0 +1,39 @@
+{
+  "name": "dsh-email-notify",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin: send an email notification via SMTP after a task completes. Registers the send_email tool and a system-prompt section that nudges the model to email a task summary to the owner when a task finishes. Zero runtime deps (hand-rolled SMTP over node:tls).",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "smtp.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "email",
+    "smtp",
+    "notification"
+  ],
+  "scripts": {},
+  "dependencies": {},
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
