@@ -180,6 +180,27 @@
   `author` 是 GitHub 用户名。改动插件时**两边都要同步**。
   ⚠️ 插件仓的测试在 `tests/test_parse.py`（本仓里同名脚本在 `tools/test_card_parse.py`），
   路径做成了自适应的：`main.py` 在旁边就用当前目录，否则退回 `astrbot_plugin_netease_pick/`。
+  - **组织归属（2026-10-06，按 `github-fork-mirror-sync` 技能做的）**：
+    **https://github.com/NekoHome-Studio/astrbot_plugin_netease_pick** 是个人仓的 **fork**
+    （`fork: true`、`parent: beichen24a1/…`）—— 个人仓**没有转移所有权**，组织仓库列表里也能看到它。
+    ⚠️ **一个仓库只能有一个 owner**，所以「在组织里出现 + 不转移所有权」在物理上只能是 fork，
+    代价是头上挂着 `forked from` 标签，而且 **GitHub 不支持把 fork 变回独立仓库**。
+    将来若想要一个没有 fork 标签的组织仓，就得在组织里新建独立仓再重配镜像（或者直接 transfer）。
+  - **自动同步：workflow 放在【个人仓】，不在 fork** —— `.github/workflows/mirror-to-org.yml`，
+    个人仓 push main / 打 tag 时由 CI 反向强推组织 fork。凭据是个人仓的 secret
+    **`ORG_MIRROR_TOKEN`**（值就是 `gh auth token`，用 `--body` 写入；**别用管道**，
+    Windows PowerShell 下会混进 `\r`，症状是只报 403、很难查）。
+    ⚠️ **别在组织仓的 main 上直接提交** —— 单向镜像会强推覆盖，改动一律走个人仓。
+    ⚠️ **删 tag 要两侧都删**：`--tags` 只推存在的 tag，不会同步删除远端多余的。
+    ⚠️ **fork 的 Actions 已禁用**（`actions/permissions` → `enabled=false`）。工作流里的
+      `if: github.repository == 'beichen24a1/…'` 守卫会让 fork 侧的 run 变成 **`skipped`（不是 failed）**，
+      所以即使没禁也不会刷失败邮件。
+    ⚠️ 三条踩过的：`actions/checkout` 必须 `persist-credentials: false`（它写的
+      `http.extraheader` 会盖掉 org remote 的凭据 ⇒ 403）；**tag 事件绝不推 main**
+      （一个指向旧提交的 tag 会把镜像的 main 拖回旧版本）；fork 仓库**不支持 deploy key**（422），
+      凭据只能用 PAT / OAuth token。
+    ⇒ 结果是一个**有意的不对称**：`metadata.yaml` 的 `repo` 和 README 的 clone 地址都指向
+    **组织仓**（市场上架展示的是它），但**开发与提交都在个人仓**。
   - **上架 AstrBot 插件市场**：去 **https://cloud.astrbot.app/publish** 提交（要注册 AstrBot Cloud 账号），
     市场直接读仓里的 `metadata.yaml`（**不是**往 GitHub 提 PR）。
     官方要求：压缩包 ≤ 16 MB、`version` 遵循语义化版本（**带不带 `v` 都行** ——
@@ -189,6 +210,8 @@
   - ✅ **发布后的验收**（比"push 成功了"强得多）：`git clone` 到临时目录 → 里面跑
     `tests/test_parse.py` **全部通过** → `yaml.safe_load(metadata.yaml)` 各字段正常 →
     本地 `HEAD^{tree}` 与 `gh api …/commits/main --jq .commit.tree.sha` **相等**。
+    镜像侧另做了端到端：打一个临时 tag → **32 秒内**自动出现在组织 fork（另一侧同 sha），
+    两侧 main sha 至今一致。
 
 **DSH 已升级到 `0.2.0-rc.2`，给 Web 全面加了认证 ⇒ `/dsh` 当前【已失效】。**
 
