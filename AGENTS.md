@@ -125,10 +125,13 @@
   已 `winget install Gyan.FFmpeg`，并在 **`启动\restart-astrbot.ps1` 里加了 PATH 探测** ——
   因为 winget 写的是**注册表** PATH，而 DSH 及其子进程继承的是**旧环境**，
   必须显式 prepend `%LOCALAPPDATA%\Microsoft\WinGet\Links`。
-- **另一条发送路线**：AstrBot 的 `File`（群文件）组件在本架构下**必然失败**（它的 `file` 是 property，
-  在 **AstrBot 本机**查 `os.path.exists()`，而 SnowLuma 容器的挂载**全是命名卷**、没有绑定宿主目录）⇒
-  发群文件只能用 OneBot 的 `upload_group_file`（读容器内路径，要先 `docker cp`），
-  实测也通，配置项 `send_as=file`。
+- **默认【语音 + mp3 文件】两个都发**（配置 `send_as` 默认 `record,file`，填单个就只发那个）。
+  两条路原理不同：**语音**走 AstrBot 的 `Record` 组件（适配器读**宿主机**文件转 base64 内联，
+  与容器无关）；**mp3 文件**走 OneBot 的 `upload_group_file`（读**容器内**路径，所以要先 `docker cp`）。
+  ⚠️ **群里顺序固定是「文件在上、语音在下」，这是被框架逼出来的** —— 语音必须走
+  **最后一次 `yield`**（`yield` 之后框架就不再执行后续代码了，见坑 ③），所以文件只能在它之前 `await` 发完。
+  ⚠️ **别用 AstrBot 的 `File`（群文件）组件**：它的 `file` 是 property，会在 **AstrBot 本机**
+  查 `os.path.exists()`，而 SnowLuma 容器的挂载**全是命名卷**、没有绑定宿主目录 ⇒ 必然失败。
 - **实测验收（2026-10-06 00:43，测试群 `<TEST_GROUP_ID>`）**：小号发 `https://163cn.tv/bhu1nHlF`
   → 引用它 + @南汐 → 日志 `短链解析…id=3410744228` / `下载完成 3673005 字节` / `已用语音发出`，
   群里出现 `[record]`；ffprobe 确认下载到的是完整一首歌（`duration=229.5 秒`、`128 kbps`、`mp3`）。

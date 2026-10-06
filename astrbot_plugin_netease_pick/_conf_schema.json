@@ -5,12 +5,12 @@
     "default": true
   },
   "send_as": {
-    "description": "用哪种消息发：record=语音（默认，能在聊天窗直接播放；适配器会读成 base64 内联，不受跨文件系统影响）、file=群文件（可下载留存；走 OneBot 的 upload_group_file，需要先把文件 docker cp 进容器）。两种在测试群都实测通过。",
+    "description": "发哪些形式，逗号分隔。record=语音（能在聊天窗直接播放）、file=mp3 文件（可下载留存）。默认两个都发；只想要一个就填 record 或 file。⚠️ 无论怎么填，群里顺序都是「文件在上、语音在下」—— 因为语音必须走最后一次 yield，而 yield 之后框架就不再执行后续代码了。",
     "type": "string",
-    "default": "record"
+    "default": "record,file"
   },
   "container": {
-    "description": "仅 send_as=file 时用到：QQ 协议端（SnowLuma）的 Docker 容器名。AstrBot 在宿主机、OneBot 在容器里，两边文件系统隔离，所以群文件模式要先 docker cp 进去。",
+    "description": "仅发 file 时用到：QQ 协议端（SnowLuma）的 Docker 容器名。AstrBot 在宿主机、OneBot 在容器里，两边文件系统隔离，所以发文件前要先 docker cp 进去。",
     "type": "string",
     "default": "snowluma"
   }

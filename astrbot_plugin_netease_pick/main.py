@@ -164,38 +164,64 @@ class Main(star.Star):
         name = f"{song_id}.mp3"
         logger.info(f"[netease] id={song_id} 下载完成 {size} 字节 -> {path}")
 
-        # 发送。两条路都实测过（2026-10-06，测试群）：
-        #   · record —— 走 AstrBot 的 Record 组件。适配器对 `Image | Record` 会
-        #     **读成本地文件转 base64 内联**（`aiocqhttp_message_event._from_segment_to_dict`），
-        #     所以传**宿主机路径**即可，不受跨文件系统影响；群里显示为可播放的语音。
-        #     实测一首 229 秒 / 3.5 MB 的歌照样发得出去。
-        #   · file   —— 走 OneBot 的 `upload_group_file`：它读的是**容器内**路径，
-        #     所以必须先 `docker cp` 进去。群里显示为群文件（可下载、留存）。
-        # ⚠️ 千万别用 AstrBot 的 `File` 组件 —— 它的 `file` 是个 property，会在
-        #    **AstrBot 本机** `os.path.exists()` 检查，而容器内路径在宿主机不存在
-        #    ⇒ 返回空串 ⇒ `retcode=1400 message segment "file" is missing required or usable fields`
-        #    （2026-10-06 实测踩过，日志里能看到发出去的 `'file': ''`）。
-        want = str(self._cfg("send_as", "record") or "record").lower()
-        try:
-            if want == "file":
+        # 发送。**默认两个都发**（语音 + mp3 文件），按配置可只留一个。
+        #
+        # ⚠️ 顺序是**被框架逼出来的，不能换**：
+        #   · 群文件走 `upload_group_file`，是一次普通 `await` —— 必须先做；
+        #   · 语音走 AstrBot 的 `Record` 组件，必须是**最后一次 `yield`** ——
+        #     因为 `yield` 之后框架就不再往下跑这个生成器了（见模块 docstring 坑 5）。
+        #   所以群里看到的顺序固定是「文件在上、语音在下」。
+        #
+        # 两条路的原理差别（都 2026-10-06 实测过）：
+        #   · `Record` —— 适配器对 `Image | Record` 会 `convert_to_base64()`，
+        #     读的是**宿主机**文件，与容器无关。
+        #   · `upload_group_file` —— OneBot 读的是**容器内**路径，所以要先 `docker cp` 进去。
+        # ⚠️ 千万别用 AstrBot 的 `File` 组件：它的 `file` 是个 property，会在
+        #    **AstrBot 本机** `os.path.exists()` 检查，容器内路径在宿主机不存在
+        #    ⇒ 返回空串 ⇒ `retcode=1400 message segment "file" is missing required or usable fields`。
+        want = str(self._cfg("send_as", "record,file") or "record,file").lower()
+        kinds = [k.strip() for k in want.split(",") if k.strip()]
+        errors: list[str] = []
+
+        group_id = str(getattr(event, "get_group_id", lambda: "")() or "")
+        bot = getattr(event, "bot", None)
+
+        if "file" in kinds:
+            try:
+                if bot is None:
+                    raise RuntimeError("这个平台适配器没有 bot 句柄，发不了文件")
                 remote = await self._publish_to_container(path, song_id)
-                await event.bot.call_action(
-                    "upload_group_file",
-                    group_id=event.get_group_id(),
-                    file=remote,
-                    name=name,
-                )
-                logger.info(f"[netease] 已用群文件发出 id={song_id}")
+                if group_id:
+                    await bot.call_action(
+                        "upload_group_file",
+                        group_id=int(group_id),
+                        file=remote,
+                        name=name,
+                    )
+                else:
+                    await bot.call_action(
+                        "upload_private_file",
+                        user_id=int(event.get_sender_id()),
+                        file=remote,
+                        name=name,
+                    )
+                logger.info(f"[netease] 已发出 mp3 文件 id={song_id}")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"mp3 文件：{exc}")
+                logger.warning(f"[netease] mp3 文件发送失败：{exc}")
+
+        if "record" in kinds:
+            try:
                 event.stop_event()
+                yield event.chain_result([Record(file=str(path))])
+                logger.info(f"[netease] 已发出语音 id={song_id}")
                 return
-            # 默认：语音（Record 组件，宿主机路径即可）
-            event.stop_event()
-            yield event.chain_result([Record(file=str(path))])
-            logger.info(f"[netease] 已用语音发出 id={song_id}")
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"[netease] 发送失败（{want}）：{exc}")
-            await say(f"下是下好了，可发不进群里喵…(´・ω・`)\n{exc}")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"语音：{exc}")
+                logger.warning(f"[netease] 语音发送失败：{exc}")
+
+        if errors:
+            await say("下是下好了，可发不进群里喵…(´・ω・`)\n" + "\n".join(errors))
             event.stop_event()
 
     # ---- 各种小工具 ----------------------------------------------------
