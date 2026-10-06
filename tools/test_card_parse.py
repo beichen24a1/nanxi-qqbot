@@ -170,7 +170,7 @@ for shape_name, payload in SHAPES.items():
     m = plugin.ID_RE.search(text)
     check("能提取歌曲 id", m.group(1) if m else None, "26545127")
     check("能挑出网易云 URL", bool(plugin.Main._pick_netease_url(text)), True)
-    check("能取到「歌名 - 歌手」", plugin.Main._card_song_name(reply), "兄弟难当 - 杜歌")
+    check("能取到「歌名 - 歌手」", plugin.Main._card_song_name(reply.chain), "兄弟难当 - 杜歌")
 
 print("\n=== 回归：纯文本分享仍然可用 ===")
 plain_reply = components.Reply(
@@ -180,7 +180,21 @@ plain_reply = components.Reply(
     ],
 )
 check("纯文本仍能挑出短链", plugin.Main._pick_netease_url(plugin.Main._reply_text(plain_reply)) or "", "163cn.tv")
-check("纯文本没有歌名可挖（应为空）", plugin.Main._card_song_name(plain_reply), "")
+check("纯文本没有歌名可挖（应为空）", plugin.Main._card_song_name(plain_reply.chain), "")
+
+print("\n=== 直接 @ 的链接（不经引用）===")
+#: 主人 2026-10-06 要的用法：`@南汐 <链接>`，不必引用。
+for raw in [
+    # uct2 是网易云 App 分享时自带的用户上下文参数，对提 id 毫无影响，
+    # 这里用中性占位值（别把真实的贴进公开仓）。
+    "@南汐 https://music.163.com/song?id=3413072220&uct2=EXAMPLE_TOKEN&from=app",
+    "https://music.163.com/song?id=3413072220",
+    "https://music.163.com/#/song?id=3413072220&fx-wxqd=&playerUIModeId=1379005",
+    "https://y.music.163.com/m/song?id=3413072220",
+]:
+    picked = plugin.Main._pick_netease_url(raw)
+    ids = plugin.ID_RE.search(picked or "")
+    check(f"从「{raw[:38]}…」提 id", ids.group(1) if ids else None, "3413072220")
 
 print("\n=== 结论 ===")
 if failures:

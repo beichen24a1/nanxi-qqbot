@@ -38,15 +38,23 @@
    ``convert_to_base64()`` → ``file: "base64://…"``，**与两边文件系统无关**，
    传宿主机路径即可。实测一首 229 秒 / 3.5 MB 的歌当语音发出去没被平台拒。
 
-## 触发方式
-``@南汐`` + **引用**一条含网易云链接的消息。群聊必须 @（`event.is_at_or_wake_command` 把关），
-所以链接单纯发在群里不会被理。带一层**每群冷却**防刷屏。
+## 触发方式（两种，2026-10-06 都实测过）
+1. **引用**一条含网易云链接的消息 + ``@南汐`` —— 消息可以是纯文本分享，也可以是
+   QQ 的**音乐卡片**（``com.tencent.music.lua``），卡片里歌名/歌手/id 都能挖出来。
+2. **直接 @**：``@南汐 https://music.163.com/song?id=3413072220&…`` —— 不用引用，
+   链接就在本条消息里。（`event.message_str` 是 AstrBot 摘掉 At 段之后的纯文本。）
+
+取链接的优先级是「**先看被引用的那条，没有可用的再看本条**」——
+引用了别的消息时以被引用的为准，避免本条正文里的无关链接插队。
+群聊必须 @（`event.is_at_or_wake_command` 把关），所以链接单纯发在群里不会被理。
+带一层**每群冷却**（`COOLDOWN_SECONDS`）防刷屏。
 """
 
 import asyncio
 import json
 import re
 import time
+from html import unescape
 from pathlib import Path
 
 import aiohttp
@@ -155,23 +163,39 @@ class Main(star.Star):
             (seg for seg in (event.message_obj.message or []) if isinstance(seg, Reply)),
             None,
         )
-        if reply is None:
-            return
 
-        # 诊断用：卡片消息的组件类型随 QQ/适配器版本变，打出来才好对症
+        # 链接从哪来：**优先被引用的那条消息**（引用是明确意图），
+        # **没有引用就看本条消息自己** —— 主人 2026-10-06 要的「直接 @ 就行」，
+        # 例如 `@南汐 https://music.163.com/song?id=3413072220&…`。
+        # `event.message_str` 是 AstrBot 摘掉 At 段之后的纯文本，正好拿来提链接。
+        text = ""
+        chain = None
+        where = ""
+        if reply is not None:
+            text = self._reply_text(reply)
+            chain = getattr(reply, "chain", None)
+            where = "引用"
+        if not self._pick_netease_url(text):
+            own = str(getattr(event, "message_str", "") or "")
+            if own:
+                text = own
+                chain = getattr(event.message_obj, "message", None)
+                where = "本条"
+
+        # 诊断用：消息的组件类型随 QQ/适配器版本变，打出来才好对症
         logger.info(
-            "[netease] 被引用消息的组件：%s  文本前 80 字：%r",
-            [type(s).__name__ for s in (getattr(reply, "chain", None) or [])],
-            str(getattr(reply, "text", ""))[:80],
+            "[netease] 链接来源=%s  组件=%s  文本前 80 字=%r",
+            where or "(无)",
+            [type(s).__name__ for s in (chain or [])],
+            text[:80],
         )
-        text = self._reply_text(reply)
         if not text:
             return
         url = self._pick_netease_url(text)
         if not url:
             return
         # 卡片里通常带歌名/歌手，挖出来给文件命名用（挖不到就退回歌曲 id）
-        song_label = self._card_song_name(reply)
+        song_label = self._card_song_name(chain)
 
         async def say(msg: str) -> None:
             """中间反馈：主动发送，不占用 yield。"""
@@ -212,11 +236,14 @@ class Main(star.Star):
             event.stop_event()
             return
 
-        # 文件名优先用卡片里的「歌名 - 歌手」（如 `兄弟难当 - 杜歌.mp3`），
-        # 挖不到就退回歌曲 id。顺手清掉 Windows / QQ 文件名不接受的字符。
+        # 文件名优先用卡片里的「歌名 - 歌手」（如 `兄弟难当 - 杜歌.mp3`）；
+        # **直接 @ 的场景本条消息里压根没有卡片**，退一步去问一次歌曲页的 og:title；
+        # 两条都拿不到才是歌曲 id。顺手清掉 Windows / QQ 文件名不接受的字符。
+        if not song_label:
+            song_label = await self._fetch_song_title(song_id)
         label = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", song_label).strip() or song_id
         name = f"{label}.mp3"
-        logger.info(f"[netease] id={song_id} 下载完成 {size} 字节 -> {path}")
+        logger.info(f"[netease] id={song_id} 下载完成 {size} 字节 -> {path}  文件名={name}")
 
         # 发送。**默认两个都发**（语音 + mp3 文件），按配置可只留一个。
         #
@@ -328,9 +355,17 @@ class Main(star.Star):
         return "\n".join(parts)
 
     @staticmethod
-    def _card_song_name(reply) -> str:
-        """从 JSON 卡片里挖「歌名 - 歌手」，挖不到就回空串（只用来命名文件，不重要）。"""
-        for seg in getattr(reply, "chain", None) or []:
+    def _card_song_name(chain) -> str:
+        """从消息链的 JSON 卡片里挖「歌名 - 歌手」，挖不到就回空串（只用来命名文件）。
+
+        Args:
+            chain: 消息组件列表 —— 被引用消息的 ``Reply.chain``，或本条消息自己的
+                ``event.message_obj.message``。两者都可能带卡片。
+
+        Returns:
+            str: 形如 ``兄弟难当 - 杜歌``；挖不到就是空串。
+        """
+        for seg in chain or []:
             if not isinstance(seg, Json):
                 continue
             try:
@@ -345,6 +380,46 @@ class Main(star.Star):
                 return f"{title} - {desc}"
             if title or desc:
                 return title or desc
+        return ""
+
+    async def _fetch_song_title(self, song_id: str) -> str:
+        """最后一道取歌名的退路：读歌曲页的 ``og:title``。
+
+        为什么需要它：**直接 @ 的场景没有卡片**（本条消息只有 At + Plain），
+        于是文件名会退化成一串纯数字 ``3413072220.mp3``，与「引用卡片」那条路
+        （``兄弟难当 - 杜歌.mp3``）口径不一致。歌曲页是服务端渲染的，
+        ``<meta property="og:title">`` 里就是歌名，**不需要登录态**（2026-10-06 实测
+        200 / 135 KB / ``直到大地变成一颗酸橙``）。
+
+        ⚠️ **纯尽力而为**：任何异常都吞掉并回空串 —— 歌**已经下好了**，
+        不能因为"起名字"这一步失败就把整首歌吞掉。所以这里连 ``logger.warning``
+        都不用，INFO 一行足够，免得在日志里看起来像个故障。
+
+        Args:
+            song_id: 歌曲 id。
+
+        Returns:
+            str: 歌名（可能含歌手，取决于页面）；拿不到就是空串。
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"https://music.163.com/song?id={song_id}",
+                    headers={"User-Agent": UA},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    page = await resp.text(errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            logger.info(f"[netease] 取歌名失败（不影响发送）：{exc}")
+            return ""
+        # 两种属性顺序都试一下（实测本机是 property 在前，但不值得赌）。
+        for pattern in (
+            r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']*)["\']',
+            r'<meta[^>]+content=["\']([^"\']*)["\'][^>]+property=["\']og:title["\']',
+        ):
+            m = re.search(pattern, page)
+            if m:
+                return unescape(m.group(1)).strip()
         return ""
 
     @staticmethod
