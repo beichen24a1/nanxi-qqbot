@@ -30,7 +30,7 @@ AstrBot 面板 → 插件市场 → 搜「**网易云点歌**」→ 安装 → �
 
 ```bash
 cd AstrBot/data/plugins
-git clone https://github.com/beichen24a1/astrbot_plugin_netease_pick
+git clone https://github.com/NekoHome-Studio/astrbot_plugin_netease_pick
 ```
 
 然后在面板里重载插件（或重启 AstrBot）。
