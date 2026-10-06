@@ -1,6 +1,17 @@
 name: astrbot_plugin_netease_pick
 display_name: 网易云点歌
-desc: 把网易云链接发（或引用）给机器人，它就把那首歌下载下来，以 mp3 文件 + 语音两种形式发到群里。走官方外链直链，零依赖、免 key、免登录。
+short_desc: 把网易云链接发（或引用）给机器人，歌就下载成 mp3 文件 + 语音发进群。走官方外链，免 key 免登录。
+desc: >-
+  把网易云的歌曲链接发（或引用）给机器人，它就把那首歌下载下来，以 mp3 文件 + 语音两种形式发到群里。
+  走官方外链直链（零依赖、免 key、免登录），支持四种形态：@ 机器人直接发链接、引用纯文本分享、
+  引用 QQ 音乐卡片、引用 App 分享短链（先跟随 302 拿歌曲 id）。
 version: v1.0.0
 author: beichen24a1
 repo: https://github.com/beichen24a1/astrbot_plugin_netease_pick
+support_platforms:
+  - aiocqhttp
+tags:
+  - 音乐
+  - 网易云
+  - 点歌
+  - 音频下载
