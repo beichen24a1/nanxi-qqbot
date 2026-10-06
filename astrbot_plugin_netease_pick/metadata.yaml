@@ -7,7 +7,7 @@ desc: >-
   引用 QQ 音乐卡片、引用 App 分享短链（先跟随 302 拿歌曲 id）。
 version: v1.0.0
 author: beichen24a1
-repo: https://github.com/NekoHome-Studio/astrbot_plugin_netease_pick
+repo: https://github.com/beichen24a1/astrbot_plugin_netease_pick
 support_platforms:
   - aiocqhttp
 tags:

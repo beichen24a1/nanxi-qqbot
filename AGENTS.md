@@ -199,8 +199,10 @@
       `http.extraheader` 会盖掉 org remote 的凭据 ⇒ 403）；**tag 事件绝不推 main**
       （一个指向旧提交的 tag 会把镜像的 main 拖回旧版本）；fork 仓库**不支持 deploy key**（422），
       凭据只能用 PAT / OAuth token。
-    ⇒ 结果是一个**有意的不对称**：`metadata.yaml` 的 `repo` 和 README 的 clone 地址都指向
-    **组织仓**（市场上架展示的是它），但**开发与提交都在个人仓**。
+    ⇒ **`metadata.yaml` 的 `repo` 与 README 的 clone 地址都指向【个人仓】**（源，不是组织 fork）。
+    理由：两者根目录都是插件、**装起来毫无差别**，但别人从市场点进仓库时该看到**源** ——
+    对单向镜像仓提 issue / PR 没有意义。开发、提交、上架**一律走个人仓**，
+    组织仓纯属"在组织列表里露个面"。
   - **上架 AstrBot 插件市场**：去 **https://cloud.astrbot.app/publish** 提交（要注册 AstrBot Cloud 账号），
     市场直接读仓里的 `metadata.yaml`（**不是**往 GitHub 提 PR）。
     官方要求：压缩包 ≤ 16 MB、`version` 遵循语义化版本（**带不带 `v` 都行** ——
