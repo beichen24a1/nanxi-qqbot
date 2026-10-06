@@ -152,6 +152,34 @@
   日志 `链接来源=本条  组件=['At', 'Plain']` / `下载完成 3847725 字节` / `已发出 mp3 文件`；
   群里 `[file]{name=直到大地变成一颗酸橙.mp3}` + `[record]` 各一条，**顺序仍是文件在上、语音在下**。
   ⇒ 两条触发路径、两个歌名来源**都跑通了**。
+- ☠️ **坑（2026-10-06 抓到，静默得可怕）：插件配置必须从 `__init__` 的【第二个参数】拿。**
+  AstrBot 把**本插件**的配置对象（`data/config/<插件名>_config.json`）作为 `config` 注入
+  `Main(context, config)`；而 `self.context.get_config()` 返回的是**全局**配置，
+  里面**没有**本插件的段 —— 于是 `_cfg()` 每一次读都落进 `except`/默认值分支，
+  **永远返回代码里的默认值，且不报任何错**。症状与"配置没保存"一模一样：
+  配置文件写着 `send_as: "file"`，群里却照样收到「语音 + 文件」两份。
+  正解（照 `astrbot_plugin_anysearch` / `astrbot_plugin_nanxi_dsh` 的写法）：
+  ```python
+  def __init__(self, context: star.Context, config=None) -> None:
+      super().__init__(context)
+      self.config = config or {}
+  ```
+  ⚠️ 排查这类"配置不生效"的第一件事：**看插件是不是只接了 `context`**。
+- **`container` 现在留空 = 跳过 `docker cp`、直接传路径**（2026-10-06 通用化，为开源做准备）。
+  配了就 `docker cp`（本项目配的是 `snowluma`，所以行为不变）；留空则直接把宿主机路径交给协议端 ——
+  这是给「AstrBot 自己也跑在容器里」（官方 Docker Compose 部署，容器内没有 `docker` CLI）
+  或协议端与 AstrBot 共享挂载卷的场景用的。新增 `enable` 现在**真的**能关掉点歌（之前那个字段没人读）。
+  ⇒ 判据性实测：把 `container` 的代码默认值改成空串后重启，日志里**没有**出现
+  「未配置 container，直接把路径交给协议端」⇒ 说明配置确实读到了 `snowluma`，修复生效。
+- **这个插件已单独开源**：**https://github.com/beichen24a1/astrbot_plugin_netease_pick**（MIT）。
+  本地工作副本在独立目录（不在本仓里）—— 它是**插件本体**仓，只有
+  `main.py` / `_conf_schema.json` / `metadata.yaml` / `README.md` / `LICENSE` /
+  `requirements.txt` / `tests/`，给别人直接 `git clone` 到 `AstrBot/data/plugins` 就能装。
+  ⚠️ 本仓与插件仓的 `metadata.yaml` **刻意保持一致**：`repo` 都指向**插件仓自己**
+  （它的根目录就是插件，AstrBot 能直接 clone 装；指向本仓的话根目录不是插件，装不上），
+  `author` 是 GitHub 用户名。改动插件时**两边都要同步**。
+  ⚠️ 插件仓的测试在 `tests/test_parse.py`（本仓里同名脚本在 `tools/test_card_parse.py`），
+  路径做成了自适应的：`main.py` 在旁边就用当前目录，否则退回 `astrbot_plugin_netease_pick/`。
 
 **DSH 已升级到 `0.2.0-rc.2`，给 Web 全面加了认证 ⇒ `/dsh` 当前【已失效】。**
 

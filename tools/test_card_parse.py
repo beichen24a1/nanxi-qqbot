@@ -25,9 +25,15 @@ import sys
 import types
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-SITE = REPO / "astrbot" / "data" / "site-packages"
-PLUGIN_DIR = REPO / "astrbot_plugin_netease_pick"
+HERE = Path(__file__).resolve().parent
+#: 插件目录：本项目的开发仓里它在 `REPO/astrbot_plugin_netease_pick`；
+#: 独立发布仓（本文件在 `tests/`）里**仓根就是插件目录**，`main.py` 就在旁边。
+PLUGIN_DIR = HERE.parent
+if not (PLUGIN_DIR / "main.py").is_file():
+    PLUGIN_DIR = HERE.parent / "astrbot_plugin_netease_pick"
+#: aiohttp 的来源：本项目把它放在 `astrbot/data/site-packages`；
+#: 独立仓 / 系统 Python 里没有这一层也无所谓 —— 找不到就用解释器自己的。
+SITE = HERE.parent / "astrbot" / "data" / "site-packages"
 
 logging.basicConfig(level=logging.CRITICAL)
 

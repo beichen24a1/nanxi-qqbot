@@ -139,8 +139,16 @@ def _find_music_meta(node, depth: int = 0):
 
 
 class Main(star.Star):
-    def __init__(self, context: star.Context) -> None:
+    def __init__(self, context: star.Context, config=None) -> None:
+        super().__init__(context)
         self.context = context
+        #: **本插件**的配置对象 —— AstrBot 把它作为**第二个参数**注入，对应
+        #: `data/config/<插件名>_config.json`。
+        #: ⚠️ 别改用 `self.context.get_config()`：那是**全局**配置，里面没有本插件的段，
+        #: 于是每次读配置都会**静默**退回代码里的默认值。本项目真踩过 ——
+        #: 配置里写 `send_as: "file"`，实际却按默认的 `record,file` 把语音和文件都发了，
+        #: 而且**一点报错都没有**（症状和"配置没保存"一模一样）。
+        self.config = config or {}
         #: 上一次响应时间，按 unified_msg_origin 记（简单冷却，不必持久化）
         self._last_reply: dict[str, float] = {}
 
@@ -156,6 +164,8 @@ class Main(star.Star):
         （日志里连一条 `[netease]` 都没有）。petpet 那种"stop + 只 yield 一次"才是安全的。
         所以这里：中间状态用 `await event.send(...)` 主动发，**最后只 yield 一次**（发歌）。
         """
+        if not self._cfg("enable", True):
+            return
         if not event.is_at_or_wake_command:
             return
 
@@ -308,16 +318,21 @@ class Main(star.Star):
     # ---- 各种小工具 ----------------------------------------------------
 
     def _cfg(self, key: str, default):
-        """读插件配置；读不到就回默认值（不能因为配置缺失就不干活）。"""
+        """读**本插件**的配置；没配就回默认值（不能因为配置缺失就不干活）。
+
+        Args:
+            key: 配置项名，见 `_conf_schema.json`。
+            default: 没配时的回退值。
+
+        Returns:
+            object: 配置值；没配或读失败则返回 `default`。
+        """
         try:
-            conf = self.context.get_config()
-            if hasattr(conf, "get"):
-                sub = conf.get("astrbot_plugin_netease_pick")
-                if isinstance(sub, dict) and key in sub:
-                    return sub[key]
-                if key in conf:
-                    return conf[key]
-        except Exception:  # noqa: BLE001
+            if hasattr(self.config, "get"):
+                value = self.config.get(key)
+                if value is not None:
+                    return value
+        except Exception:  # noqa: BLE001 - 配置读失败也不能让点歌整个挂掉
             pass
         return default
 
@@ -489,14 +504,17 @@ class Main(star.Star):
     async def _publish_to_container(self, local: Path, song_id: str) -> str:
         """把下载好的文件送进 QQ 容器，返回**容器内**路径。
 
-        ⚠️ **这一步不能省。** 本项目的三件套是跨文件系统的：
-          · AstrBot 跑在**宿主机**（下载的文件在 `D:\\dsh\\QQbot\\...`）
-          · OneBot（SnowLuma）跑在 **Docker 容器**里，而容器的挂载**全是命名卷**
-            （`/var/lib/docker/volumes/...`），**没有绑定任何宿主目录**
-        ⇒ 把宿主机路径直接交给 OneBot，它会报
-          `ActionFailed retcode=100: ENOENT: no such file or directory, realpath 'D:/dsh/...'`
-          （2026-10-06 实测踩过，日志里就这一行）。
-        所以先把文件 `docker cp` 进容器，再把**容器内路径**发出去。
+        **只在需要时才 cp。** 两种常见部署的文件系统关系完全不同：
+          · **AstrBot 在宿主机、协议端在容器里**（本项目就是这种）⇒ 两边隔离，
+            把宿主机路径直接交给 OneBot 会报
+            `ActionFailed retcode=100: ENOENT: no such file or directory, realpath 'D:/…'`
+            （2026-10-06 实测踩过，日志里就这一行）⇒ **必须**先 cp 进容器，
+            发**容器内路径**。这时把配置项 `container` 填成协议端的容器名。
+          · **AstrBot 自己也在容器里**（官方 Docker Compose 部署就是这样，容器里
+            **没有 docker CLI**，`docker cp` 根本跑不了），或两边共享了挂载卷
+            ⇒ **跳过这一步**，直接把路径交出去。这时把 `container` **留空**。
+
+        判据很简单：**`container` 配了就 cp，留空就直传。**
 
         Args:
             local: 宿主机上的文件路径。
@@ -508,8 +526,13 @@ class Main(star.Star):
         Raises:
             RuntimeError: `docker cp` 失败（带 stderr 片段）。
         """
-        container = str(self._cfg("container", "snowluma") or "snowluma")
-        remote = f"/tmp/nanxi-song-{song_id}.mp3"
+        container = str(self._cfg("container", "") or "").strip()
+        if not container:
+            # 留空 ⇒ 协议端与 AstrBot 在同一个文件系统上（同机非 Docker、
+            # 或容器间共享了挂载卷）⇒ 直传宿主机路径，跳过 docker cp。
+            logger.info("[netease] 未配置 container，直接把路径交给协议端（跳过 docker cp）")
+            return str(local)
+        remote = f"/tmp/astrbot-netease-{song_id}.mp3"
         proc = await asyncio.create_subprocess_exec(
             "docker",
             "cp",

@@ -1,6 +1,6 @@
 {
   "enable": {
-    "description": "启用「引用网易云链接 + @南汐」点歌",
+    "description": "启用点歌（@机器人 + 网易云链接，链接可以直接发，也可以引用一条含链接的消息）",
     "type": "bool",
     "default": true
   },
@@ -10,8 +10,8 @@
     "default": "record,file"
   },
   "container": {
-    "description": "仅发 file 时用到：QQ 协议端（SnowLuma）的 Docker 容器名。AstrBot 在宿主机、OneBot 在容器里，两边文件系统隔离，所以发文件前要先 docker cp 进去。",
+    "description": "QQ 协议端（NapCat / Lagrange / SnowLuma 等）的 Docker 容器名，仅发 file 时用到。AstrBot 在宿主机、协议端在容器里时两边文件系统隔离，必须先 docker cp 进去再发容器内路径，这时填容器名；AstrBot 自己也在容器里（官方 Docker Compose 部署，容器内没有 docker CLI），或两边共享挂载卷时，**留空**即可直接传路径。",
     "type": "string",
-    "default": "snowluma"
+    "default": ""
   }
 }
