@@ -180,6 +180,15 @@
   `author` 是 GitHub 用户名。改动插件时**两边都要同步**。
   ⚠️ 插件仓的测试在 `tests/test_parse.py`（本仓里同名脚本在 `tools/test_card_parse.py`），
   路径做成了自适应的：`main.py` 在旁边就用当前目录，否则退回 `astrbot_plugin_netease_pick/`。
+  - **上架 AstrBot 插件市场**：去 **https://cloud.astrbot.app/publish** 提交（要注册 AstrBot Cloud 账号），
+    市场直接读仓里的 `metadata.yaml`（**不是**往 GitHub 提 PR）。
+    官方要求：压缩包 ≤ 16 MB、`version` 遵循语义化版本（**带不带 `v` 都行** ——
+    已上架的 `astrbot_plugin_anysearch` 就写的 `v0.3`）、仓里别带 `__pycache__` 等垃圾。
+    `support_platforms` 填的是 **只 `aiocqhttp`** —— 发 mp3 文件走的 `upload_group_file`
+    是 OneBot v11 专有接口，别的适配器只能发语音那一半。
+  - ✅ **发布后的验收**（比"push 成功了"强得多）：`git clone` 到临时目录 → 里面跑
+    `tests/test_parse.py` **全部通过** → `yaml.safe_load(metadata.yaml)` 各字段正常 →
+    本地 `HEAD^{tree}` 与 `gh api …/commits/main --jq .commit.tree.sha` **相等**。
 
 **DSH 已升级到 `0.2.0-rc.2`，给 Web 全面加了认证 ⇒ `/dsh` 当前【已失效】。**
 
