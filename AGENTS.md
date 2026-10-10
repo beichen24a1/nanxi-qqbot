@@ -43,6 +43,31 @@
   `metadata.yaml` 哈希与仓库根源码一致、`chrome-profile` 1277 文件 / 195 MB 登录态完整）。
   ⇒ 以后遇到"停用／关掉／禁用"，**先找官方配置开关**（`plugin_set`、`provider_settings.enable`
   这类），配置确实做不到时才动文件，而且**动之前先问一句**。
+- ☠️☠️ **【精简模式挡不住的一个漏钱口：群聊上下文的「图片描述」】**（2026-10-10 发现，代价是主人一张
+  API key 被烧到欠费）：
+  - **`provider_settings.enable=false` 只管「人格对话」，它管不到 `provider_ltm_settings.image_caption`。**
+    两者是**不同的机制**，别以为关了大开关就万事大吉。
+  - 触发条件是 `image_caption AND bool(image_caption_provider_id)`
+    （`builtin_stars/astrbot/group_chat_context.py:63-65`）——
+    **群里每来一张图就调一次视觉模型**（本机配的是 `deepseek/deepseek-v4-flash-vision-exp`），
+    生成描述存进群聊上下文。**不需要 @ 机器人**，是纯被动监听。
+  - 后果：日志里攒了 **990 次 `Insufficient Balance`**（从 `01:16` 一路到 `22:25`，全天不停），
+    加上 227 次 `401`。
+  - **已关**（双保险）：`provider_ltm_settings.image_caption=false`
+    **且** `image_caption_provider_id=""`（后者清空是为了防"以后有人手滑又把开关打开"）。
+    ⚠️ **改之前必须先停 AstrBot** —— 它内存里握着这份配置，退出时会整体回写覆盖磁盘改动。
+  - **验收（判据性）**：重启后往测试群发一张公网图 → 图确实进群（`[image+text]`）
+    而日志里 `获取图片描述` / `Insufficient` / `401` **零命中**（之前是每图必报一次）。
+- **★ 定位这类"偷偷在调 LLM"的方法**（本次就是这么找到的）：去日志里**按来源分组数一遍**，
+  而不是只看最新几行 ——
+  ```powershell
+  Select-String -Path logs\astrbot.log -Pattern '401|Insufficient' |
+    ForEach-Object { if ($_.Line -match '\[([a-z_.]+):\d+\]') { $matches[1] } } |
+    Group-Object | Sort-Object Count -Descending
+  ```
+  本次第一名是 `core.event_bus`（83，是事件总线在转发），**第三名 `astrbot.group_chat_context`（42）
+  才是真凶** —— 只看最后几行会以为是别的东西。
+  ⇒ **教训：「关掉 AI」≠「关掉所有会调 LLM 的东西」。关完必须回日志里数一遍还有没有别的调用源。**
 - **推送 GitHub 前的体检口诀**（本次实测有效）：`git count-objects -vH` 看体积、
   `git ls-files | Select-String '凭据|credential|secret|\.env|token|\.key$|\.pem$|\.db$|password'`
   扫敏感文件、再看 `git check-ignore -q <关键路径>` 是否都 ignored。
