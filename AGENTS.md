@@ -55,6 +55,8 @@
     加上 227 次 `401`。
   - **已关**（双保险）：`provider_ltm_settings.image_caption=false`
     **且** `image_caption_provider_id=""`（后者清空是为了防"以后有人手滑又把开关打开"）。
+    现成脚本：**`tools/set_image_caption_off.py`**（`--dry-run` / `--apply`，
+    自动备份到 `_backup/<日期>/` 并保持原有 BOM；配置不在默认位置时用 `--config` 指定）。
     ⚠️ **改之前必须先停 AstrBot** —— 它内存里握着这份配置，退出时会整体回写覆盖磁盘改动。
   - **验收（判据性）**：重启后往测试群发一张公网图 → 图确实进群（`[image+text]`）
     而日志里 `获取图片描述` / `Insufficient` / `401` **零命中**（之前是每图必报一次）。
