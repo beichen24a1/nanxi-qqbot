@@ -1,4 +1,4 @@
-"""AstrBot 启动器：为 pywin32 设置路径后运行 main.py。
+r"""AstrBot 启动器：为 pywin32 设置路径后运行 main.py。
 
 背景：AstrBot 的 mcp 依赖在 Windows 上 import pywintypes，需要
 - win32\lib 在 sys.path（pywintypes.py loader）
@@ -9,7 +9,7 @@ import os
 import sys
 import runpy
 
-ASP = r"D:\dsh\QQbot\astrbot"
+ASP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "astrbot")
 SP = os.path.join(ASP, "data", "site-packages")
 
 # 1) 把 site-packages 及其 win32 相关子目录加入 sys.path

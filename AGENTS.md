@@ -7,7 +7,36 @@
 
 ---
 
-## 🚨 最新状态（2026-10-03 全面勘察，接手先读这一节）
+## 当前运行口径（2026-10-14 收尾，优先于下面的历史记录）
+
+当前是**精简模式**：保留摸头 GIF、网易云点歌（mp3 + 语音）、DSH 主动通知、mas 原生 Webhook 通知。
+聊天、自主交活、星驿前缀命令、联网搜索与浏览器工具都暂停；源码、登录态与会话历史保留。
+
+- `provider_settings.enable=false`、`provider_settings.web_search=false`。
+- `provider_ltm_settings.image_caption=false`，`image_caption_provider_id=""`。
+- `plugin_set=["astrbot_plugin_petpet","astrbot_plugin_netease_pick"]`。
+- `plugin_set` 只过滤消息 handler，**不阻止加载插件或注册工具**；启动时出现 17 个工具不是 AI 被重开。
+- 通知鉴权是 **AstrBot im-scope API key**，不是 DeepSeek key，也不是 WebUI 密码。
+- mas 使用**全局** Webhook直连 `im/messages`，模板 `{title}\n\n{content}`，保留 `AUTO-MAS 敬上`；旧 LLM 文案脚本和 8765 中继仅为历史备用。
+- `qq-bridge` 本地已是 **0.2.0-r3 / fbb1a54**，`dsh_cli.js` 已有新版 slash RPC、Cookie 与 remote.mux 适配。
+  下面“本地仍停在 c9e1f27 / 需要升级客户端”的说法属于 10 月 3 日早期快照；旧命令入口当前停用，不能据此承诺它已恢复群内服务。
+- 主 DSH 是 3080；南汐独立实例是 `<NANXI_DSH_HOME>` / 3081。精简功能**不依赖 3081**，不监听不等于通知或点歌故障。
+- 当前维护入口：[工作清单](工作清单.md)、[维护笔记](维护笔记.md)、[环境速查](环境速查.md)。日期较早的计划/勘察/复盘是历史材料，不能作为自动恢复 AI 的待办。
+
+**运维脚本现行口径**：
+
+1. `python tools/shutdown_nanxi_ai.py --dry-run|--apply`：一次关掉聊天、内置搜索与图片描述，保留摸头**和点歌**。支持 `--config`，备份到 `_backup/<日期>/`，保留 BOM，检查监听后原子写回。默认只预览。
+2. `python tools/set_image_caption_off.py --dry-run|--apply`：单独关闭图片描述；实际改写同样必须先停 AstrBot。
+3. 启动/重启共用 `启动/initialize-astrbot-env.ps1` 探测 ffmpeg；启动锁为独占文件句柄，释放后可重复启动，不用删除锁文件。
+4. `游戏通知/apply_mas_webhook.py` 从被忽略的 `游戏通知/config.json` 读取 `group_id` / `im_platform`；群号缺失或仍是占位符时拒绝应用。
+5. `tools/nanxi-test.ps1` 必须设置三个 `NANXI_*` 部署变量；默认示例值不能用于验收。测试小号在 3003，主号在 3002，**不得共用一个平台**。
+6. PowerShell 5.1 **支持** `$x = if (...) { ... } else { ... }`。以前把空值误归因为版本不支持的说法不成立；应检查 BOM/编码、环境变量与字符串插值。含中文的 ps1 保持 UTF-8 BOM。
+
+本轮收尾以精简模式为边界。自主智能体、DSH 浏览器插件加载、审批与会话写入补丁的历史问题保留为暂停项目，不在本轮重新启用。
+
+---
+
+## 历史决策与验收记录（2026-09 至 10 月，按日期理解）
 
 **🛑 2026-10-05（最新，最优先读）：南汐已切到【精简模式】—— AI 聊天关闭，只留「摸头」+ 通知通道。**
 
@@ -32,9 +61,8 @@
   全场 `Prepare to send` **只有摸头那一次**、`Agent 使用工具` **0 次** ⇒ LLM 一次都没跑。
   `notify_owner` 实测**仍能发到群**（以 `<BOT_QQ>` 发）⇒ 通知通道不受影响。
 - **一键关停脚本**：`C:\Python310\python.exe tools\shutdown_nanxi_ai.py --dry-run|--apply`
-  （幂等；**发现 6185/3002 还在监听就拒绝执行** —— 必须先停 AstrBot，否则它退出时会用内存里
-  那份覆盖你的改动；`--apply` 自动把配置备份到 `_backup\20261005\`）。
-- **怎么恢复（就两行）**：`provider_settings.enable = true` + `plugin_set = ["*"]`，重启 AstrBot。
+  （现行版本保留摸头和点歌，并同时关闭图片描述；实际改写前检查 6185/3002，备份到 `_backup/<日期>/`。10 月 5 日初版只关两个配置项，已被现行版本取代）。
+- **当时恢复聊天的操作（历史说明；本轮不恢复）**：`provider_settings.enable = true` + `plugin_set = ["*"]`，重启 AstrBot。
   配置备份：`_backup\20261005\cmd_config.json.bak-before-ai-off-20261005-140322`。
 - **☠️ 教训（2026-10-05 我自己踩的，务必记住）**：主人说「**先关掉**」，
   我却用 `Move-Item` 把三个插件目录搬去了 `_disabled_plugins\` —— 他立刻质问
@@ -55,8 +83,8 @@
     加上 227 次 `401`。
   - **已关**（双保险）：`provider_ltm_settings.image_caption=false`
     **且** `image_caption_provider_id=""`（后者清空是为了防"以后有人手滑又把开关打开"）。
-    现成脚本：**`tools/set_image_caption_off.py`**（`--dry-run` / `--apply`，
-    自动备份到 `_backup/<日期>/` 并保持原有 BOM；配置不在默认位置时用 `--config` 指定）。
+    脚本：**`tools\set_image_caption_off.py`**（`--dry-run` / `--apply`，自动备份到
+    `_backup\<日期>\` 并保持原有 BOM；配置不在默认位置时用 `--config` 指定）。
     ⚠️ **改之前必须先停 AstrBot** —— 它内存里握着这份配置，退出时会整体回写覆盖磁盘改动。
   - **验收（判据性）**：重启后往测试群发一张公网图 → 图确实进群（`[image+text]`）
     而日志里 `获取图片描述` / `Insufficient` / `401` **零命中**（之前是每图必报一次）。
@@ -115,13 +143,11 @@
   4. **推完必做的一致性验证**：`git rev-parse "HEAD^{tree}"` 与
      `gh api repos/<owner>/<repo>/commits/main --jq '.commit.tree.sha'` **必须相等** ——
      相等才证明"远端的字节 = 你本地扫过的那份"。本次两边都是 `71f231002bce…` ✓
-  ⚠️ 分享仓里**仍然包含**机器人 QQ、主人 QQ、群号等（AGENTS.md 与各文档里到处都是）——
-  这是主人知情的分享内容，但**下一个接手的人别再往里加更多个人信息**。
+  ⚠️ 10 月 5 日最初分享时曾包含账号/群号，随后按主人要求完成脱敏。当前公开文件使用占位符与本地部署配置，**不要再加入真实账号或凭据**。
 
   ⚠️⚠️ **脱敏/改脚本时顺带踩的两个 PowerShell 坑**（都是"动一下就坏"，记牢）：
-  1. **`$x = if (...) { ... } else { ... }` 是 PowerShell 7 语法，Windows PowerShell 5.1 上不成立** ——
-     变量会**静默变成空**，不报语法错。本项目 `tools/nanxi-test.ps1`、`启动/恢复测试bot.ps1`
-     都要求 5.1 兼容，必须写成两步：
+  1. **更正（2026-10-14）**：PowerShell 5.1 支持赋值接收 `if` 的输出。本次空值事故不能据此归因为版本语法不支持；应检查编码、环境变量与插值。本项目 `tools/nanxi-test.ps1`、`启动/恢复测试bot.ps1`
+     仍保留两步赋值以便排查部署环境：
      `$x = $env:FOO; if (-not $x) { $x = '默认值' }`。
      症状极隐晦：报 `onebot_.json: No such file or directory`（因为插值成了空串）。
   2. **原本 ASCII-only、没有 BOM 的 `.ps1`，一旦加入中文注释就会在 5.1 下解析异常。**
@@ -198,14 +224,17 @@
   或协议端与 AstrBot 共享挂载卷的场景用的。新增 `enable` 现在**真的**能关掉点歌（之前那个字段没人读）。
   ⇒ 判据性实测：把 `container` 的代码默认值改成空串后重启，日志里**没有**出现
   「未配置 container，直接把路径交给协议端」⇒ 说明配置确实读到了 `snowluma`，修复生效。
-- **这个插件已单独开源**：**https://github.com/beichen24a1/astrbot_plugin_netease_pick**（MIT）。
-  本地工作副本在独立目录（不在本仓里）—— 它是**插件本体**仓，只有
-  `main.py` / `_conf_schema.json` / `metadata.yaml` / `README.md` / `LICENSE` /
-  `requirements.txt` / `tests/`，给别人直接 `git clone` 到 `AstrBot/data/plugins` 就能装。
-  ⚠️ 本仓与插件仓的 `metadata.yaml` **刻意保持一致**：`repo` 都指向**插件仓自己**
-  （它的根目录就是插件，AstrBot 能直接 clone 装；指向本仓的话根目录不是插件，装不上），
-  `author` 是 GitHub 用户名。改动插件时**两边都要同步**。
-  ⚠️ 插件仓的测试在 `tests/test_parse.py`（本仓里同名脚本在 `tools/test_card_parse.py`），
+- **独立开源仓已发布**：**https://github.com/beichen24a1/astrbot_plugin_netease_pick**
+  （MIT）。本地工作副本在 `D:\dsh\astrbot_plugin_netease_pick` —— 它是**插件本体**仓
+  （只有 `main.py` / `_conf_schema.json` / `metadata.yaml` / `README.md` / `LICENSE` /
+  `requirements.txt` / `tests/`），与本项目仓、分享仓是三个不同的东西：
+  · **本项目仓**（`D:\dsh\QQbot`）= 含历史的完整开发仓
+  · **分享仓**（`D:\dsh\QQbot-share`，`nanxi-qqbot`）= 整个项目本体的公开快照
+  · **插件仓**（`D:\dsh\astrbot_plugin_netease_pick`）= 只发这一个插件，给别人直接 `git clone` 装
+  ⚠️ 三处（本项目仓 / 分享仓 / 插件仓）的 `metadata.yaml` **刻意保持一致**：
+  `repo` 都指向**插件仓自己**（它的根目录就是插件，AstrBot 能直接 clone 装；
+  指向 `nanxi-qqbot` 的话根目录不是插件，装不上），`author` 是 GitHub 用户名。
+  ⚠️ 插件仓的测试在 `tests/test_parse.py`（本项目仓里同名脚本在 `tools/test_card_parse.py`），
   路径做成了自适应的：`main.py` 在旁边就用当前目录，否则退回 `astrbot_plugin_netease_pick/`。
   - **组织归属（2026-10-06，按 `github-fork-mirror-sync` 技能做的）**：
     **https://github.com/NekoHome-Studio/astrbot_plugin_netease_pick** 是个人仓的 **fork**
@@ -227,22 +256,22 @@
       （一个指向旧提交的 tag 会把镜像的 main 拖回旧版本）；fork 仓库**不支持 deploy key**（422），
       凭据只能用 PAT / OAuth token。
     ⇒ **`metadata.yaml` 的 `repo` 与 README 的 clone 地址都指向【个人仓】**（源，不是组织 fork）。
-    理由：两者根目录都是插件、**装起来毫无差别**，但别人从市场点进仓库时该看到**源** ——
-    对单向镜像仓提 issue / PR 没有意义。开发、提交、上架**一律走个人仓**，
+    理由（主人 2026-10-06 定的）：两者根目录都是插件、**装起来毫无差别**，但别人从市场点进仓库时
+    该看到**源** —— 对单向镜像仓提 issue / PR 没有意义。开发、提交、上架**一律走个人仓**，
     组织仓纯属"在组织列表里露个面"。
   - **上架 AstrBot 插件市场**：去 **https://cloud.astrbot.app/publish** 提交（要注册 AstrBot Cloud 账号），
-    市场直接读仓里的 `metadata.yaml`（**不是**往 GitHub 提 PR）。
-    官方要求：压缩包 ≤ 16 MB、`version` 遵循语义化版本（**带不带 `v` 都行** ——
-    已上架的 `astrbot_plugin_anysearch` 就写的 `v0.3`）、仓里别带 `__pycache__` 等垃圾。
-    `support_platforms` 填的是 **只 `aiocqhttp`** —— 发 mp3 文件走的 `upload_group_file`
+    市场直接读仓里的 `metadata.yaml`（**不是**往 GitHub 提 PR；`AstrBot_Plugins_Collection` 那个旧路子已不作数）。
+    官方要求：压缩包 ≤ 16 MB、`version` 遵循语义化版本（**带不带 `v` 都行** —— 本机已上架的
+    `astrbot_plugin_anysearch` 就写的 `v0.3`）、仓里别带 `__pycache__` 等垃圾（`.gitignore` 已挡）。
+    `support_platforms` 本项目填的是 **只 `aiocqhttp`** —— 因为发 mp3 文件走的 `upload_group_file`
     是 OneBot v11 专有接口，别的适配器只能发语音那一半。
-  - ✅ **发布后的验收**（比"push 成功了"强得多）：`git clone` 到临时目录 → 里面跑
+  - ✅ **发布后做过的验收**（比"push 成功了"强得多）：`git clone` 到临时目录 → 里面跑
     `tests/test_parse.py` **全部通过** → `yaml.safe_load(metadata.yaml)` 各字段正常 →
     本地 `HEAD^{tree}` 与 `gh api …/commits/main --jq .commit.tree.sha` **相等**。
     镜像侧另做了端到端：打一个临时 tag → **32 秒内**自动出现在组织 fork（另一侧同 sha），
     两侧 main sha 至今一致。
 
-**DSH 已升级到 `0.2.0-rc.2`，给 Web 全面加了认证 ⇒ `/dsh` 当前【已失效】。**
+**2026-10-03 早期事故：DSH 新认证曾使旧 `/dsh` 链路 401（客户端后来已更新；当前入口按精简模式暂停）。**
 
 - **症状**：任何 DSH API 调用都返回 **HTTP 401**（`/api/workspace.list`、`/api/session.create`…
   连 `GET /` 都是 `dsh web authentication required; reopen the URL printed by dsh web.`）。
@@ -262,7 +291,7 @@
   `{ type:'client-request', rpcId, method, payload:{ args } }`；
   流端点由 `/api/events.mux` 改为 **`/api/remote.mux`**（WebSocket，带 cookie）。
 - **现成轮子**：`qq-bridge` 上游已发布 **`v0.2.0-r3`（专门适配 0.2.0-rc.2）**，
-  本地还停在 `c9e1f27`（0.1.x 世代）——**这就是修复 `/dsh` 的路径**。
+  当时本地还停在 `c9e1f27`；2026-10-14 核对已到 `fbb1a54 / 0.2.0-r3`。入口当前暂停，不能把客户端更新等同于群内恢复。
 - 详细勘察：`环境勘察报告-20261003.md`｜下一步方案：`计划-南汐与DSH分层协作.md`。
 
 **✅ 2026-10-03 晚：星驿（astrdsh-relay）链路【已端到端打通】—— 这是南汐用 DSH 的正式路径。**
@@ -1000,7 +1029,7 @@ QQ 群（白名单 4 个，主要 <TEST_GROUP_ID>）里 @南汐(<BOT_QQ>)
 | **`复盘-南汐DSH插件加载排查.md`** | 📋 **想给南汐做"正规 DSH 插件"（B 计划）之前先读这份**。里面是 2026-10-04/05 六轮尝试的逐轮记录（推断 → 做法 → 结果 → **为什么错**），以及 **12 条已确证的硬事实**（判"DSH 跳过某个 bundle"只能看 **stderr** 上的 `skipping profile bundle "…"`；`failed to import` 只是 `entry.fiber === undefined`、真错被吞；`link:` 装的插件解析不到 `@deepseek-ai/*`；`dsh plugin` 是 pnpm 的透传别名…）和 **3 条 PowerShell 坑**（`.ps1` 必须带 UTF-8 BOM，否则中文注释会让 PS 5.1 按 ANSI 解码报错 —— 而 `Parser::ParseFile` 会说"语法 OK"；PS 会缓冲原生命令输出导致日志运行中永远 0 字节；外层 `-RedirectStandardOutput` 会抢掉 ps1 自己的日志文件）。**当前状态：插件通过了全部加载检查但仍未生效，卡在"加载层之后"，已按主人决定收手。** | 本项目（复盘） |
 | `patch_relay_steer.py` | 给星驿的 `POST /message` 加 **`mode: "steer"`（插队）**：透传给 DSH 的 `agent.steer` —— 投到当前 turn **最近的 step 边界**，**不等它跑完**（`followup` 才要等）。只改 `lib/index.js` 里**投递用户消息的那一处**；⚠️ 该文件里 `followup(createUserMessage(` 出现**两次**，另一处是**自主心跳**（`source:{kind:'plugin'}`），**绝不能一起改**，所以锚点带上了那处独有的注释。幂等，带 `--revert` / `--dry-run` / `--path` / `--all`。⚠️ **改完必须重启对应的 DSH 实例**（HMR 不重新 import `lib/*.js`）；升级 `dsh-astrbot-relay` 后会丢，要重跑 | 本项目（补丁） |
 | `patch_relay_session_title.py` | 让星驿**别再覆盖**用户自己起的会话名，改成「原标题 + `_南汐`」（新配置项 `sessionTitleSuffix`；星驿自建的仍用模板）。改 `lib/session-title.js` + `lib/index.js`，幂等、带 `--revert` / `--dry-run` / `--path` / `--all`。⚠️ **升级 dsh-astrbot-relay 后要重跑；改完必须重启 DSH（HMR 不会重新 import）** | 本项目（补丁） |
-| `dsh_cli.js` | 向 DSH Web **创建/复用**会话 + 发任务 + 收回复（JSONL 输出）。子命令：`--list-sessions`（列会话）、`--cancel <sid>`（急停）。⚠️ **2026-10-03 起依赖的旧客户端已 401，待随 qq-bridge 上游 v0.2.0-r3 一起修** | 本项目 |
+| `dsh_cli.js` | 向 DSH Web **创建/复用**会话 + 发任务 + 收回复（JSONL 输出）。子命令：`--list-sessions`（列会话）、`--cancel <sid>`（急停）。新版协议适配已落地；旧消息入口暂停，仅保留为历史备用 | 本项目 |
 | `astrbot_plugin_dsh\main.py` | AstrBot 的 `/dsh` 插件 + 自然语言意图拦截（**已归档**，被星驿取代） | 本项目 |
 | `astrbot_plugin_nanxi_dsh\` | **南汐自主调用 DSH**：注册 `@filter.llm_tool` 工具 `dsh_task`，南汐自己决定把活交给 DSH；过程流式回帖、结果由南汐人设转述、仅主人可用。与星驿共存、共用同一 DSH 会话 | 本项目（源码在仓库根，部署副本拷进 `astrbot\data\plugins\`） |
 | `astrbot_plugin_petpet\` | 摸头杀插件：`/摸头` 生成摸头 GIF（Pillow 渲染器 + 手部素材），详见其 `README.md` | 本项目 |
@@ -1009,7 +1038,7 @@ QQ 群（白名单 4 个，主要 <TEST_GROUP_ID>）里 @南汐(<BOT_QQ>)
 | `mas_issue草稿\` | `/mas草稿 N` 生成的 issue 草稿（按 mas 官方模板写，等主人点头才提交） | 本项目（进 git） |
 | `mas答疑记录.md` | mas 答疑的完整流水归档 | 本项目（进 git） |
 | `astrbot\` | **AstrBot 源码 + 数据**（上游 clone） | 上游（gitignore） |
-| `qq-bridge\` | DSH Web API 客户端底座（`dsh_cli.js` 依赖 `src/dsh-client.js`）。⚠️ 本地停在 `c9e1f27`（0.1.x 世代），**上游已到 `v0.2.0-r3`（适配 DSH 0.2.0-rc.2）** —— 修复 `/dsh` 要更新它 | 上游（gitignore） |
+| `qq-bridge\` | DSH Web API 客户端底座（`dsh_cli.js` 依赖 `src/dsh-client.js`）。本地已到 `fbb1a54 / v0.2.0-r3`，具有签名 Cookie 和新版协议适配；不是当前默认消息入口 | 上游（gitignore） |
 | `snowluma\` | SnowLuma 发行包（实际跑 Docker 容器，此为本机手动版） | 上游（gitignore） |
 | `astrbot\data\cmd_config.json` | AstrBot **核心配置**（DeepSeek/白名单/OneBot/南汐人设） | 上游数据（gitignore，含密钥） |
 | `astrbot\data\data_v4.db` | AstrBot 数据库（人设、会话、api_keys、cron） | 上游数据（*.db gitignore） |
@@ -1308,7 +1337,7 @@ C:\Python310\python.exe <PROJECT_ROOT>\patch_astrbot_forward_name.py
 
 ---
 
-## 7. 当前任务状态（诚实标注）
+## 7. 历史任务状态（截至各条记录日期；当前维护以文首与工作清单为准）
 
 - ✅ **阶段 0**（QQ 聊天跑通）完成。
 - ✅ **端到端验收能力（测试 bot）建成（2026-10-03）**：第二个 QQ 号 `<TEST_BOT_QQ>` 跑在 SnowLuma 的独立第二实例里，在私有测试群 `<TEST_GROUP_ID>` 充当"真实群友"；配合 `tools\nanxi-test.ps1` + 技能 `nanxi-bot-e2e-test`，南汐的群内行为**可被 agent 自动验收**（发消息 → 读回复 → 判延迟）。实测通过（4 秒回复）。⚠️ **容器重启后**第二实例需用 `启动\恢复测试bot.ps1` 拉回来（一条命令；若小号停在扫码界面则需主人扫码 —— **扫码时务必勾「自动登录」**，否则每次重启都要重扫）。「重建容器持久化」2026-10-03 实测**失败**（新容器 `/usr/local/bin/node: Operation not permitted` → 重启循环，当场已回滚、数据无损），**暂时搁置**，详见 `南汐测试bot-使用说明.md` §6.2 与坑表。
@@ -1390,6 +1419,8 @@ C:\Python310\python.exe <PROJECT_ROOT>\patch_astrbot_forward_name.py
 ---
 
 ## 8. 工作约定（务必遵守）
+
+精简模式下 `/dsh`、`/mas` 和自主工具均暂停；下面的权限说明只适用于重新启用前后的历史设计，不是现行启用清单。
 
 1. **git 全程存档**：动手改代码/配置前先 `git status` 看工作区；每次有意义改动提交一次 `git add -A && git commit`。**git 上传需要代理**：`git -c http.sslBackend=openssl -c http.proxy=http://127.0.0.1:7897 <cmd>`。
 2. **密钥不入库**：含 key/token/密码的配置（cmd_config.json、config.json、onebot_*.json、*.db）都被 .gitignore 排除，别用 `git add -f` 强加。

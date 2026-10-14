@@ -13,17 +13,16 @@ Write-Host "==============================" -ForegroundColor Cyan
 $lockDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\logs"))
 New-Item -ItemType Directory -Force -Path $lockDir | Out-Null
 $lockFile = Join-Path $lockDir "start.lock"
-if (Test-Path -LiteralPath $lockFile) {
-    $lockAge = (Get-Date) - (Get-Item -LiteralPath $lockFile).LastWriteTime
-    if ($lockAge.TotalMinutes -lt 5) {
-        Write-Host ""
-        Write-Host "[!] 已经有一个启动流程在跑了（锁文件 $lockFile，$([int]$lockAge.TotalSeconds) 秒前创建）。" -ForegroundColor Yellow
-        Write-Host "    本窗口不再重复启动，避免两个 AstrBot 抢端口。" -ForegroundColor Yellow
-        Write-Host "    若确认没有别的窗口在跑，删除该锁文件后重试即可。" -ForegroundColor Yellow
-        exit 1
-    }
+try {
+    $startLock = [System.IO.File]::Open($lockFile, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+} catch {
+    Write-Host "[!] 已有启动流程在运行，本窗口退出。" -ForegroundColor Yellow
+    exit 1
 }
-Set-Content -LiteralPath $lockFile -Value (Get-Date -Format o) -Encoding UTF8
+$root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$ErrorActionPreference = 'Stop'
+try {
+. (Join-Path $PSScriptRoot 'initialize-astrbot-env.ps1')
 
 # ---- 0) 确保 Docker Desktop(引擎) 已启动 ----
 Write-Host ""
@@ -34,15 +33,15 @@ if (Get-Process -Name "Docker Desktop","com.docker.backend" -ErrorAction Silentl
     Write-Host "  [..] Docker Desktop 进程已存在，等待引擎..."
 } else {
     Write-Host "  [..] 启动 Docker Desktop ..."
-    if (Test-Path $dockerExe) { Start-Process -FilePath $dockerExe } else { Write-Host "  [!] 未找到 Docker Desktop，跳过" }
+    if (Test-Path $dockerExe) { Start-Process -FilePath $dockerExe -WindowStyle Hidden } else { Write-Host "  [!] 未找到 Docker Desktop，跳过" }
 }
 for ($i=0; $i -lt 30; $i++) {
-    docker info *>$null
+    try { docker info *>$null } catch { }
     if ($LASTEXITCODE -eq 0) { $engineReady = $true; break }
     Start-Sleep -Seconds 3
 }
 if ($engineReady) { Write-Host "  [OK] Docker 引擎就绪" -ForegroundColor Green }
-else { Write-Host "  [!] Docker 引擎未就绪（Docker Desktop 可能还在启动）" -ForegroundColor Yellow }
+else { throw "Docker 引擎未就绪；本次启动失败。" }
 
 # ---- 1) SnowLuma 容器 ----
 Write-Host ""
@@ -52,7 +51,8 @@ if ($snow -match "snowluma") {
     Write-Host "  [OK] SnowLuma 已在运行" -ForegroundColor Green
 } else {
     Write-Host "  [..] 启动 SnowLuma 容器 ..."
-    docker start snowluma 2>$null | Out-Null
+    docker start snowluma | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "SnowLuma 启动失败。" }
     Write-Host "  [OK] SnowLuma 已启动（首次会自动拉起 QQ）" -ForegroundColor Green
 }
 
@@ -106,11 +106,11 @@ if ($astr6185 -and $astr3002) {
     Get-ChildItem -Path $logDir -Filter "astrbot.err-*.log" -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force -ErrorAction SilentlyContinue
 
-    Start-Process -FilePath "C:\Python310\python.exe" -ArgumentList "D:\dsh\QQbot\run_astrbot.py" `
-        -WorkingDirectory "D:\dsh\QQbot\astrbot" -WindowStyle Hidden `
+    Start-Process -FilePath "C:\Python310\python.exe" -ArgumentList ('"' + (Join-Path $root 'run_astrbot.py') + '"') `
+        -WorkingDirectory (Join-Path $root 'astrbot') -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logDir "astrbot.log") `
         -RedirectStandardError (Join-Path $logDir "astrbot.err.log")
-    Write-Host "  [OK] AstrBot 已启动（日志：$logDir\astrbot.log）"
+    Write-Host "  [..] AstrBot 进程已启动，正在检查端口（日志：$logDir\astrbot.log）"
 
     # 起完再验一次：OneBot 端口绑上了才算真的可用
     Write-Host "  [..] 等 OneBot 绑定 3002 ..."
@@ -120,7 +120,7 @@ if ($astr6185 -and $astr3002) {
         if ((Test-NetConnection -ComputerName 127.0.0.1 -Port 3002 -WarningAction SilentlyContinue).TcpTestSucceeded) { $ok3002 = $true; break }
     }
     if ($ok3002) { Write-Host "  [OK] OneBot 已就绪（3002 已监听，QQ 通道可用）" -ForegroundColor Green }
-    else { Write-Host "  [!] 3002 仍未监听 —— 请看日志：$logDir\astrbot.log（多半是端口被占）" -ForegroundColor Yellow }
+    else { throw "3002 仍未监听，请检查 $logDir\astrbot.log" }
 }
 
 Write-Host ""
@@ -128,8 +128,14 @@ Write-Host "----- 访问入口 -----" -ForegroundColor Cyan
 Write-Host "  DSH Web       : http://localhost:3080"
 Write-Host "  AstrBot WebUI : http://localhost:6185"
 Write-Host "  SnowLuma WebUI: http://localhost:5099"
-Write-Host "  在 QQ 群 <TEST_GROUP_ID> 发消息，即可测试南汐回复" -ForegroundColor Green
+Write-Host "  在已配置的私有测试群 @南汐 摸摸，即可测试摸头；精简模式不会回复闲聊" -ForegroundColor Green
 Write-Host ""
 Write-Host "本脚本运行完毕，服务已在后台运行。按任意键关闭本窗口。" -ForegroundColor Gray
 
-Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue
+} catch {
+    Write-Host ("[失败] " + $_.Exception.Message) -ForegroundColor Red
+    exit 1
+} finally {
+    $startLock.Dispose()
+    # Keep the unlocked file: removing it can race a new startup acquiring it.
+}

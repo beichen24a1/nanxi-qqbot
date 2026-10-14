@@ -1,106 +1,65 @@
 # -*- coding: utf-8 -*-
-"""把 AstrBot 的 AI 能力关掉（只留「摸头」+ 主动发送通知）。
+"""切到精简模式：关闭聊天、联网搜索与图片描述，保留摸头、点歌和通知。
 
-依据（都读过上游源码了，不是猜的）：
-  * `provider_settings.enable` 是**官方总开关** ——
-    `core/pipeline/process_stage/stage.py:53` 与 `.../method/agent_request.py:37`
-    两处都判它，为 False 时只打一行 debug 日志然后 `return`，**不报错、不刷屏**。
-  * 主动发送（`im/messages`，也就是 notify_owner / mas 播报走的那条）是 dashboard 的
-    HTTP 接口，鉴权用 dashboard 的 jwt/密码，**完全不经过 pipeline、不看 provider**。
-  * 「摸头」插件 `astrbot_plugin_petpet` 用 `@filter.regex(...)` 触发，**纯正则**，
-    同样不依赖 LLM。
+默认只预览。--apply 只在 AstrBot 已停止时写入，自动备份并保留原有 BOM。
+插件文件、模型凭据、人格、白名单均保留。配置在别处用 --config 指定。
 
-⚠️ 改之前必须先把 AstrBot 停掉 —— 它内存里握着配置，退出时可能把改动覆盖掉。
-   脚本本身会检查端口，发现还在监听就拒绝执行。
+    python tools/shutdown_nanxi_ai.py --dry-run
+    python tools/shutdown_nanxi_ai.py --apply
 
-用法：
-    C:\\Python310\\python.exe tools\\shutdown_nanxi_ai.py --dry-run   # 只看会改什么
-    C:\\Python310\\python.exe tools\\shutdown_nanxi_ai.py --apply     # 真改（自动备份）
+主动通知使用 AstrBot im-scope API key，不经过聊天模型。plugin_set 只筛选
+消息 handler，不阻止插件加载。图片描述独立于 provider_settings.enable，
+必须另外关闭；恢复聊天时也不需要重新打开图片描述。
 """
 import argparse
-import json
-import pathlib
-import subprocess
 import sys
-import time
+from pathlib import Path
 
-CFG = pathlib.Path(r"D:\dsh\QQbot\astrbot\data\cmd_config.json")
-BACKUP_DIR = pathlib.Path(r"D:\dsh\QQbot\_backup\20261005")
+from astrbot_config_guard import DEFAULT_CONFIG, load_config, write_config
 
-
-def port_busy(port: int) -> bool:
-    """6185/3002 上有没有人在听（有就说明 AstrBot 还在跑）。"""
-    out = subprocess.run(
-        ["netstat", "-ano"], capture_output=True, text=True, shell=False
-    ).stdout
-    for line in out.splitlines():
-        if f":{port} " in line or f":{port}\t" in line:
-            if "LISTENING" in line:
-                return True
-    return False
+LITE_PLUGINS = ["astrbot_plugin_petpet", "astrbot_plugin_netease_pick"]
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--apply", action="store_true")
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
-    if not (args.apply or args.dry_run):
-        ap.error("要么 --dry-run，要么 --apply")
-
-    busy = [p for p in (6185, 3002) if port_busy(p)]
-    if busy:
-        print(f"✗ 端口 {busy} 还在监听 —— AstrBot 没停。")
-        print("  先跑：启动\\stop_astrbot.bat（或按端口 taskkill），再执行本脚本。")
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="关闭 AI，保留摸头、点歌和主动通知")
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true", help="AstrBot 停止后备份并写入")
+    mode.add_argument("--dry-run", action="store_true", help="只预览（默认）")
+    args = parser.parse_args(argv)
+    try:
+        original, config = load_config(args.config)
+        provider = config.get("provider_settings")
+        ltm = config.get("provider_ltm_settings")
+        if not isinstance(provider, dict) or not isinstance(ltm, dict):
+            raise ValueError("配置缺少 provider_settings / provider_ltm_settings 对象。")
+        changes = []
+        for section, key, value, name in [
+            (provider, "enable", False, "provider_settings.enable"),
+            (provider, "web_search", False, "provider_settings.web_search"),
+            (ltm, "image_caption", False, "provider_ltm_settings.image_caption"),
+            (ltm, "image_caption_provider_id", "", "provider_ltm_settings.image_caption_provider_id"),
+            (config, "plugin_set", LITE_PLUGINS, "plugin_set"),
+        ]:
+            if section.get(key) != value or (value is False and section.get(key) is not False):
+                changes.append(name)
+                section[key] = value
+        if not changes:
+            print("[=] 已是精简模式；摸头、点歌与通知保留，无需改动。")
+            return 0
+        print("将修改：" + "、".join(changes))
+        print("保留 handler：" + "、".join(LITE_PLUGINS))
+        if not args.apply:
+            print("[i] 预览，未写入。先停 AstrBot，再加 --apply。")
+            return 0
+        backup = write_config(args.config, original, config, "ai-off")
+        print(f"[+] 已写入精简配置；备份：{backup}")
+        print("接下来启动 AstrBot，验证摸头、点歌和通知，并检查日志没有模型调用。")
+        return 0
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"[x] {exc}", file=sys.stderr)
         return 2
 
-    cfg = json.loads(CFG.read_text(encoding="utf-8-sig"))
-    ps = cfg["provider_settings"]
-    print(f"当前 provider_settings.enable = {ps.get('enable')}")
-    print(f"当前 default_provider_id      = {ps.get('default_provider_id')}")
-    print(f"当前 plugin_set                = {cfg.get('plugin_set')}")
 
-    want_enable = False
-    want_plugins = ["astrbot_plugin_petpet"]
-    todo = []
-    if ps.get("enable") is not False:
-        todo.append(f"provider_settings.enable -> False（不做 LLM 回复）")
-    if cfg.get("plugin_set") != want_plugins:
-        todo.append(f"plugin_set -> {want_plugins}（只留摸头插件的 handler）")
-    if not todo:
-        print("\n两项都已经到位，不用改。")
-        return 0
-
-    print("\n将会做：")
-    for t in todo:
-        print("   ·", t)
-    print(
-        "\n⚠️ **不动任何文件** —— 插件目录原封不动，只是配置上说"
-        "「只有 astrbot_plugin_petpet 的 handler 生效」。\n"
-        "   provider 清单 / 人格 / 白名单 / 工具注册全部保留，把这两项改回去 + 重启就恢复。"
-    )
-
-    if args.dry_run:
-        print("\n（干跑，未写入）")
-        return 0
-
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    bak = BACKUP_DIR / f"cmd_config.json.bak-before-ai-off-{stamp}"
-    bak.write_bytes(CFG.read_bytes())
-    print(f"\n已备份 -> {bak}")
-
-    ps["enable"] = want_enable
-    cfg["plugin_set"] = want_plugins
-    # ⚠️ 保持 utf-8-sig（带 BOM）写回：AstrBot 写这份配置时就是带 BOM 的。
-    CFG.write_text(
-        json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8-sig"
-    )
-    back = json.loads(CFG.read_text(encoding="utf-8-sig"))
-    print(f"已写入：provider_settings.enable = {back['provider_settings']['enable']}")
-    print(f"已写入：plugin_set = {back['plugin_set']}")
-    print("（default_provider_id / 人格 / 白名单原样保留，改回来 + 重启即恢复）")
-    return 0
-
-
-raise SystemExit(main())
+if __name__ == "__main__":
+    sys.exit(main())

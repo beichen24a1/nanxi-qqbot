@@ -25,8 +25,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $Container  = 'snowluma'
 # 测试小号的 QQ：从环境变量读（部署时设 NANXI_TEST_BOT_UIN）；没设就用示例值。
-# ⚠️ 别写成 `$x = if (...) { ... } else { ... }` —— 那是 PowerShell 7 语法，
-#    在 Windows PowerShell 5.1 上变量会静默变空。
+# PowerShell 5.1 支持赋值接收 if 的输出；两步赋值便于核对部署环境。
 $TestBotUin = $env:NANXI_TEST_BOT_UIN; if (-not $TestBotUin) { $TestBotUin = '10001' }
 $ConfDst    = '/etc/supervisor/conf.d/extra-qq.conf'
 $HomeDir    = '/app/.local/share/qq2'

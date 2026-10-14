@@ -46,7 +46,7 @@ ASTROBOT_SEND_URL = "http://127.0.0.1:6185/api/v1/im/messages"
 # 把下面这行改成 RELAY_URL 即可（中继会剥掉签名再转发 AstrBot）。
 RELAY_URL = "http://127.0.0.1:8765/mas-notify"
 MAS_WEBHOOK_URL = ASTROBOT_SEND_URL
-GROUP_ID = "<TEST_GROUP_ID>"
+GROUP_ID = os.environ.get("NANXI_TEST_GROUP", "").strip()
 IM_PLATFORM = "onebot-qq"
 
 # 全局渠道显示名（脚本靠它识别"这条是我们配的"，用于幂等更新）
@@ -60,8 +60,14 @@ GLOBAL_TEXT = "{title}\n\n{content}"
 
 
 def load_im_key() -> str:
-    with open(NANXI_CONFIG, "r", encoding="utf-8") as f:
+    global GROUP_ID, IM_PLATFORM
+    with open(NANXI_CONFIG, "r", encoding="utf-8-sig") as f:
         cfg = json.load(f)
+    GROUP_ID = GROUP_ID or str(cfg.get("group_id") or "").strip()
+    IM_PLATFORM = str(cfg.get("im_platform") or "onebot-qq").strip()
+    if not GROUP_ID.isdecimal() or int(GROUP_ID) <= 0:
+        print("[错误] 游戏通知/config.json 需要有效的 group_id（或设置 NANXI_TEST_GROUP）。")
+        sys.exit(1)
     key = cfg.get("im_api_key")
     if not key:
         print("[错误] 游戏通知/config.json 里没有 im_api_key")
@@ -148,7 +154,7 @@ def api_apply_global(port: int, im_key: str, *, apply_flag: bool) -> bool:
     if not apply_flag:
         print("       将写入：")
         print(f"         名称     = {GLOBAL_NAME}")
-        print(f"         Url      = {MAS_WEBHOOK_URL}   （本地中继 → 再去掉「AUTO-MAS 敬上」→ AstrBot）")
+        print(f"         Url      = {MAS_WEBHOOK_URL}")
         print(f"         Method   = POST")
         print(f"         Template = {GLOBAL_TEXT}")
         return True
@@ -267,7 +273,8 @@ def file_apply_global(im_key: str, *, apply_flag: bool) -> bool:
         print("\n[中止] mas 正在运行，改配置文件会被它覆盖。请先完全退出 mas，或用默认的 API 模式。")
         return False
     if state is None:
-        print("\n[注意] 无法确认 mas 是否在运行；若它开着，本次写入可能被覆盖。")
+        print("\n[中止] 无法确认 mas 已停止，拒绝直接写配置；请用默认 API 模式。")
+        return False
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     bak = f"{GLOBAL_CONFIG}.bak-{stamp}"
@@ -302,7 +309,7 @@ def main() -> None:
         print(f"[API] 使用 mas 后端 127.0.0.1:{port}")
         ok = api_apply_global(port, im_key, apply_flag=apply_flag)
         if ok and apply_flag and do_test:
-            api_test(port, im_key)
+            ok = api_test(port, im_key)
 
     if not apply_flag:
         print("\n[预览模式] 未做任何改动。确认后加 --apply 真正写入。")

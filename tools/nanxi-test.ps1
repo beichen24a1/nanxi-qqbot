@@ -13,13 +13,13 @@
     Architecture (see AGENTS.md / 南汐测试bot-使用说明.md):
       test bot <TEST_BOT_QQ>  --(SNOWLUMA_EXTRA_QQ_HOMES instance)
                            --> OneBot HTTP 127.0.0.1:3010 (inside container)
-                           \-> wsClient --> AstrBot reverse WS 3002
+                           \-> wsClient --> AstrBot reverse WS 3003
       Nanxi    <BOT_QQ>  --(main instance)
                            --> OneBot HTTP 127.0.0.1:3000 (inside container)
                            \-> wsClient --> AstrBot reverse WS 3002
 
     Because SnowLuma is reachable only through the Docker CLI, every API call is
-    issued as:  docker exec [-i] snowluma curl ... --data-binary '@-'
+    issued as: docker exec snowluma sh -c '<base64 body> -> curl -d @file'
     which also avoids both the quote-escaping and the encoding traps.
 
 .NOTES
@@ -52,15 +52,17 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 $Container  = 'snowluma'
 # ⚠️ 下面三个号码是**你自己部署时才有**的，所以从环境变量读；没设就用示例值
 #    （示例值发不出去 —— 部署时请务必设 NANXI_TEST_BOT_UIN / NANXI_BOT_QQ / NANXI_TEST_GROUP）。
-# ⚠️ 别写成 `$x = if (...) { ... } else { ... }` —— 那是 **PowerShell 7** 的语法，
-#    在 **Windows PowerShell 5.1 上不成立**，变量会静默变成空（本脚本踩过：症状是
-#    `onebot_.json: No such file or directory`）。所以用两步赋值。
+# 使用两步赋值以便检查缺失的部署参数；PowerShell 5.1 也支持赋值接收 if 输出。
 $TestBotUin = $env:NANXI_TEST_BOT_UIN; if (-not $TestBotUin) { $TestBotUin = '10001' }
 $TestBotTag = 'deepseek'
 $NanxiUin   = $env:NANXI_BOT_QQ;       if (-not $NanxiUin)   { $NanxiUin   = '10002' }
 $TestGroup  = $env:NANXI_TEST_GROUP;   if (-not $TestGroup)  { $TestGroup  = '100001' }
 $Port       = 3010
 $ConfigPath = "/app/data/config/onebot_$TestBotUin.json"
+
+if ($TestBotUin -eq '10001' -or $NanxiUin -eq '10002' -or $TestGroup -eq '100001') {
+    throw 'Set NANXI_TEST_BOT_UIN, NANXI_BOT_QQ and NANXI_TEST_GROUP to your private test deployment first.'
+}
 
 $script:Token = $null
 
@@ -192,9 +194,10 @@ switch ($Action) {
         $deadline = (Get-Date).AddSeconds($TimeoutSec)
         $start = Get-Date
         $seen = Get-LatestSeq
+        $notBefore = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         while ((Get-Date) -lt $deadline) {
             $hist = Get-History -N 12
-            $reply = $hist | Where-Object { $_.message_seq -gt $seen -and $_.user_id -eq [long]$NanxiUin } | Select-Object -First 1
+            $reply = $hist | Where-Object { $_.message_seq -gt $seen -and $_.time -ge $notBefore -and $_.user_id -eq [long]$NanxiUin } | Select-Object -First 1
             if ($reply) {
                 Write-Host "NANXI REPLIED after $([int]((Get-Date) - $start).TotalSeconds)s:"
                 Show-Message -Msg $reply
@@ -210,6 +213,7 @@ switch ($Action) {
     'test' {
         if (-not $Text) { throw "-Text is required for -Action test" }
         $before = Get-LatestSeq
+        $notBefore = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
         $chain = @()
         $body  = $Text
@@ -228,7 +232,7 @@ switch ($Action) {
         while ((Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 1200
             $now = Get-History -N 12
-            $reply = $now | Where-Object { $_.message_seq -gt $before -and $_.user_id -eq [long]$NanxiUin } | Select-Object -First 1
+            $reply = $now | Where-Object { $_.message_seq -gt $before -and $_.time -ge $notBefore -and $_.user_id -eq [long]$NanxiUin } | Select-Object -First 1
             if ($reply) {
                 $sw.Stop()
                 Write-Host "REPLY  : $(Get-PlainText $reply.message)"

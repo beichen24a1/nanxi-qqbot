@@ -58,16 +58,15 @@
 """
 
 import argparse
-import json
-import shutil
 import sys
-from datetime import datetime
 from pathlib import Path
+
+from astrbot_config_guard import DEFAULT_CONFIG, load_config, write_config
 
 #: 仓根（本脚本在 `<repo>/tools/` 下）。
 REPO = Path(__file__).resolve().parent.parent
 #: 默认的 AstrBot 配置路径（可用 --config 覆盖）。
-DEFAULT_CFG = REPO / "astrbot" / "data" / "cmd_config.json"
+DEFAULT_CFG = DEFAULT_CONFIG
 
 
 def main() -> int:
@@ -80,8 +79,9 @@ def main() -> int:
         default=DEFAULT_CFG,
         help=f"AstrBot 的 cmd_config.json 路径（默认 {DEFAULT_CFG}）",
     )
-    ap.add_argument("--apply", action="store_true", help="真正写入（缺省只预览）")
-    ap.add_argument("--dry-run", action="store_true", help="只预览（默认行为）")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true", help="真正写入（缺省只预览）")
+    mode.add_argument("--dry-run", action="store_true", help="只预览（默认行为）")
     args = ap.parse_args()
 
     cfg_path: Path = args.config
@@ -91,9 +91,11 @@ def main() -> int:
         return 1
 
     # AstrBot 写的是 utf-8-sig（带 BOM），读的时候两种都要能认。
-    raw = cfg_path.read_bytes()
-    has_bom = raw.startswith(b"\xef\xbb\xbf")
-    cfg = json.loads(raw.decode("utf-8-sig"))
+    try:
+        raw, cfg = load_config(cfg_path)
+    except (OSError, ValueError) as exc:
+        print(f"[x] 配置读取失败：{exc}", file=sys.stderr)
+        return 2
 
     ltm = cfg.get("provider_ltm_settings")
     if not isinstance(ltm, dict):
@@ -124,19 +126,13 @@ def main() -> int:
         print("[!] 写入前请先停掉 AstrBot —— 它退出时会把内存里的配置整体回写，覆盖你的改动。")
         return 0
 
-    backup_dir = REPO / "_backup" / datetime.now().strftime("%Y%m%d")
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    bak = backup_dir / f"cmd_config.json.bak-before-image-caption-off-{stamp}"
-    shutil.copy2(cfg_path, bak)
+    try:
+        bak = write_config(cfg_path, raw, cfg, "image-caption-off")
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"[x] {exc}", file=sys.stderr)
+        return 2
     print(f"\n[+] 已备份：{bak}")
-
-    out = json.dumps(cfg, ensure_ascii=False, indent=2)
-    cfg_path.write_bytes((("\ufeff" if has_bom else "") + out).encode("utf-8"))
-    print(
-        f"[+] 已写入：{cfg_path}（BOM={'有' if has_bom else '无'}，"
-        f"{len(out.encode('utf-8'))} 字节）"
-    )
+    print(f"[+] 已写入：{cfg_path}（保留原有 BOM 状态）")
     print("\n[i] 接下来：启动 AstrBot → 往群里发一张图 → 确认日志里")
     print("    `获取图片描述` / `Insufficient` / `401` 零命中。")
     return 0

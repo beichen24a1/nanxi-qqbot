@@ -265,7 +265,7 @@ stderr 全文：recall shell dialect probe: pwsh        ← 只有这一行
 
 ## 六、当前状态与回滚
 
-**服务（都正常）**：
+**当时的服务快照（2026-10-05，不是实时状态）**：
 
 ```
 3080  主 DSH        LISTENING
