@@ -3,6 +3,7 @@
 
 触发方式（@ 的位置不限，带不带 `/` 都行）：
     @南汐 摸摸
+    @南汐 @南汐 摸摸      ← 南汐自己的头像
     @用户 @南汐 摸摸
     @用户 摸摸 @南汐
     @南汐 @用户 摸摸
@@ -14,7 +15,7 @@
 图片来源优先级：
   1. 引用的消息里的图片（推荐：引用一张图 + 摸摸）
   2. 本条消息里直接发的图片
-  3. 被 @ 的人的头像
+  3. 被 @ 的其他人的头像（没有其他人且重复 @ 机器人时用机器人头像）
   4. 发送者自己的头像
 
 回复只有一张 GIF，不带任何文字。
@@ -93,6 +94,7 @@ class Main(star.Star):
             可直接交给 convert_to_file_path 处理的 Image 组件。
         """
         at_qq = None
+        self_at_count = 0
         #: 本平台机器人自己的 QQ —— 从事件里取，**不要硬编码**。
         #: 硬编码有两个毛病：换号/多机器人就得改代码；而且会把号码写进公开仓库。
         self_qq = str(getattr(event, "get_self_id", lambda: "")() or "")
@@ -106,10 +108,15 @@ class Main(star.Star):
                 return seg
             elif isinstance(seg, At):
                 qq = getattr(seg, "qq", None)
-                # 排除 @全体成员 和 @机器人自己（否则会变成摸自己的头）
-                if qq and str(qq) not in ("all", self_qq):
+                if not qq or str(qq) == "all":
+                    continue
+                if self_qq and str(qq) == self_qq:
+                    # 第一次 @ 只负责唤醒；重复 @ 表示把机器人本人作为目标。
+                    self_at_count += 1
+                else:
                     at_qq = qq
-        return Image.fromURL(AVATAR_URL.format(qq=at_qq or event.get_sender_id()))
+        target = at_qq or (self_qq if self_at_count >= 2 else event.get_sender_id())
+        return Image.fromURL(AVATAR_URL.format(qq=target))
 
     @staticmethod
     def _cleanup(out_dir: Path) -> None:
